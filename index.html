@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fffaf2">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="description" content="拍照识别英文单词，生成可暂停、可调速的听写练习。">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>WordWhiz · 小小听写官</title>
+  <style>
+    :root {
+      --ink: #243344;
+      --muted: #6e7d8f;
+      --soft: #f4efe6;
+      --paper: #fffdf9;
+      --line: #e8e0d2;
+      --coral: #f2695c;
+      --coral-dark: #d8544a;
+      --blue: #4f83c2;
+      --blue-soft: #eaf3ff;
+      --mint: #ddf3e8;
+      --yellow: #fff0bd;
+      --shadow: 0 18px 50px rgba(73, 60, 42, .10);
+      --radius-lg: 26px;
+      --radius-md: 17px;
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: var(--soft); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(255, 240, 189, .75), transparent 27rem),
+        radial-gradient(circle at 100% 22%, rgba(221, 243, 232, .85), transparent 25rem),
+        var(--soft);
+      font-family: ui-rounded, "SF Pro Rounded", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .46; }
+    :focus-visible { outline: 3px solid rgba(79, 131, 194, .45); outline-offset: 3px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+    .app-shell { width: min(100%, 760px); margin: 0 auto; padding: 22px 16px 50px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 26px; }
+    .brand { display: flex; align-items: center; gap: 11px; }
+    .brand-mark {
+      display: grid; place-items: center; width: 43px; height: 43px; border-radius: 15px;
+      color: #fff; background: var(--coral); box-shadow: 0 8px 18px rgba(242, 105, 92, .28);
+      font-size: 23px; transform: rotate(-5deg);
+    }
+    .brand-name { font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
+    .brand-caption { color: var(--muted); font-size: 11px; margin-top: 1px; }
+    .local-pill { display: inline-flex; align-items: center; gap: 6px; color: #55836b; background: var(--mint); padding: 8px 11px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .local-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #48a273; }
+
+    .hero { margin-bottom: 22px; }
+    .eyebrow { color: var(--coral-dark); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { margin: 7px 0 9px; max-width: 520px; font-size: clamp(31px, 8vw, 54px); line-height: 1.02; letter-spacing: -.055em; }
+    .hero-copy { max-width: 520px; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+
+    .step-card { margin-top: 16px; padding: 18px; background: rgba(255, 253, 249, .9); border: 1px solid rgba(232, 224, 210, .94); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+    .step-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+    .step-title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 17px; letter-spacing: -.02em; }
+    .step-number { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 9px; color: #fff; background: var(--ink); font-size: 12px; font-weight: 800; }
+    .step-help { max-width: 210px; color: var(--muted); font-size: 12px; line-height: 1.5; text-align: right; }
+
+    .dropzone { position: relative; display: grid; place-items: center; min-height: 162px; padding: 17px; border: 1.5px dashed #cfc1ac; border-radius: 19px; background: linear-gradient(135deg, #fffaf2, #fff); overflow: hidden; text-align: center; transition: border-color .2s, background .2s, transform .2s; }
+    .dropzone.dragging, .dropzone:hover { border-color: var(--coral); background: #fff7ee; }
+    .dropzone-preview { position: absolute; inset: 0; display: none; background: #f5f0e8; }
+    .dropzone-preview img { width: 100%; height: 100%; object-fit: contain; }
+    .dropzone.has-preview .dropzone-preview { display: block; }
+    .dropzone.has-preview .upload-copy { opacity: 0; pointer-events: none; }
+    .upload-copy { display: grid; justify-items: center; gap: 7px; position: relative; z-index: 1; transition: opacity .2s; }
+    .upload-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 16px; color: var(--coral-dark); background: #ffe4d9; font-size: 22px; }
+    .upload-title { font-weight: 800; }
+    .upload-subtitle { color: var(--muted); font-size: 12px; }
+    .upload-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+    .preview-actions { position: absolute; z-index: 2; right: 11px; bottom: 11px; display: flex; gap: 8px; }
+    .icon-btn { display: inline-grid; place-items: center; min-width: 39px; min-height: 39px; border: 1px solid rgba(255,255,255,.72); border-radius: 12px; color: var(--ink); background: rgba(255,255,255,.88); box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+
+    .ocr-progress { display: none; margin-top: 12px; }
+    .ocr-progress.visible { display: block; }
+    .progress-row { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
+    .progress-track { height: 8px; margin-top: 7px; border-radius: 999px; background: var(--soft); overflow: hidden; }
+    .progress-bar { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--coral), #f5a866); transition: width .2s ease; }
+    .status { min-height: 21px; margin: 11px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .status.error { color: var(--coral-dark); }
+    .status.success { color: #3b805c; }
+
+    .editor-wrap { position: relative; }
+    .word-editor { display: block; width: 100%; min-height: 125px; padding: 14px 15px; resize: vertical; border: 1px solid var(--line); border-radius: 15px; color: var(--ink); background: #fff; font: 500 16px/1.8 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .02em; }
+    .word-editor::placeholder { color: #afb6bf; font-family: inherit; font-size: 14px; letter-spacing: 0; }
+    .editor-meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; color: var(--muted); font-size: 11px; }
+    .tiny-actions { display: flex; gap: 8px; }
+    .text-btn { padding: 0; border: 0; color: var(--blue); background: transparent; font-size: 12px; font-weight: 700; }
+
+    .settings-grid { display: grid; gap: 15px; }
+    .setting { padding: 13px 14px; border: 1px solid var(--line); border-radius: 15px; background: #fff; }
+    .setting-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; font-size: 13px; font-weight: 700; }
+    .setting-value { color: var(--blue); font-variant-numeric: tabular-nums; }
+    input[type="range"] { display: block; width: 100%; margin: 0; accent-color: var(--coral); }
+    .range-labels { display: flex; justify-content: space-between; margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .select-control { width: 100%; min-height: 41px; padding: 0 11px; border: 1px solid var(--line); border-radius: 11px; color: var(--ink); background: #fff; }
+    .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+    .switch-copy { color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.45; }
+    .switch { position: relative; flex: 0 0 auto; width: 45px; height: 26px; }
+    .switch input { position: absolute; opacity: 0; }
+    .switch-track { display: block; width: 45px; height: 26px; padding: 3px; border-radius: 999px; background: #d8dee6; transition: background .2s; }
+    .switch-track::after { content: ""; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.16); transition: transform .2s; }
+    .switch input:checked + .switch-track { background: var(--coral); }
+    .switch input:checked + .switch-track::after { transform: translateX(19px); }
+
+    .session-card { position: relative; padding: 20px 18px 18px; color: #fff; background: linear-gradient(145deg, #25384e, #1d2a3a); border: 0; overflow: hidden; }
+    .session-card::after { content: ""; position: absolute; width: 180px; height: 180px; right: -65px; top: -74px; border-radius: 50%; background: rgba(242, 105, 92, .15); }
+    .session-card .step-header { position: relative; z-index: 1; }
+    .session-card .step-number { color: var(--ink); background: var(--yellow); }
+    .session-card .step-help { color: #a9bbca; }
+    .session-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 13px; color: #a9bbca; font-size: 12px; }
+    .session-count { color: #fff; font-weight: 700; }
+    .session-progress { height: 7px; border-radius: 999px; background: rgba(255,255,255,.13); overflow: hidden; }
+    .session-progress-bar { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff927c, #ffd08a); transition: width .25s ease; }
+    .listen-panel { display: grid; place-items: center; min-height: 175px; padding: 21px 12px; text-align: center; }
+    .listen-icon { display: grid; place-items: center; width: 59px; height: 59px; margin-bottom: 12px; border-radius: 21px; color: #fff; background: rgba(255,255,255,.12); font-size: 26px; }
+    .listen-state { margin: 0; color: #d7e1e9; font-size: 14px; line-height: 1.55; }
+    .answer { min-height: 35px; margin-top: 7px; color: #fff; font: 700 26px/1.25 ui-rounded, "PingFang SC", system-ui, sans-serif; letter-spacing: .035em; }
+    .answer.hidden { color: transparent; text-shadow: 0 0 14px rgba(255,255,255,.18); user-select: none; }
+    .session-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+    .control-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 43px; padding: 0 14px; border: 1px solid rgba(255,255,255,.18); border-radius: 13px; color: #e7eef4; background: rgba(255,255,255,.09); font-size: 13px; font-weight: 700; }
+    .control-btn.primary { min-width: 148px; color: #fff; background: var(--coral); border-color: var(--coral); box-shadow: 0 9px 18px rgba(242,105,92,.22); }
+    .control-btn.secondary { color: #fbdcd4; border-color: rgba(242,105,92,.46); }
+    .session-hint { margin: 14px 0 0; color: #a9bbca; text-align: center; font-size: 11px; line-height: 1.55; }
+
+    .footer-note { display: flex; justify-content: center; gap: 6px; margin: 22px 0 0; color: var(--muted); font-size: 11px; text-align: center; }
+
+    @media (min-width: 620px) {
+      .app-shell { padding: 28px 24px 62px; }
+      .step-card { padding: 23px; }
+      .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .setting:first-child { grid-column: 1 / -1; }
+      .session-card { padding: 24px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="WordWhiz 小小听写官">
+        <div class="brand-mark" aria-hidden="true">✦</div>
+        <div><div class="brand-name">WordWhiz</div><div class="brand-caption">小小听写官</div></div>
+      </div>
+      <div class="local-pill">图片留在本机</div>
+    </header>
+
+    <section class="hero" aria-labelledby="page-title">
+      <div class="eyebrow">English · Dictation</div>
+      <h1 id="page-title">拍一张，开始听写。</h1>
+      <p class="hero-copy">把课本或单词表交给我，我会找出英文单词，再按你喜欢的节奏一个个读出来。</p>
+    </section>
+
+    <section class="step-card" aria-labelledby="step-upload-title">
+      <div class="step-header">
+        <h2 class="step-title" id="step-upload-title"><span class="step-number">1</span>拍照或上传单词表</h2>
+        <div class="step-help">手机点一下就能打开相机</div>
+      </div>
+      <div class="dropzone" id="dropzone">
+        <div class="dropzone-preview" aria-hidden="true"><img id="previewImage" alt="已选择的单词表预览"></div>
+        <div class="upload-copy">
+          <div class="upload-icon" aria-hidden="true">▧</div>
+          <div class="upload-title">选择一张清晰的照片</div>
+          <div class="upload-subtitle">支持 JPG / PNG · 也可以拖进来</div>
+        </div>
+        <input class="upload-input" id="imageInput" type="file" accept="image/*" capture="environment" aria-label="拍照或上传单词表">
+        <div class="preview-actions" id="previewActions" hidden>
+          <button class="icon-btn" id="replaceImage" type="button" aria-label="重新选择图片" data-tooltip="重新选择">↻</button>
+          <button class="icon-btn" id="clearImage" type="button" aria-label="移除图片" data-tooltip="移除图片">×</button>
+        </div>
+      </div>
+      <div class="ocr-progress" id="ocrProgress" aria-live="polite">
+        <div class="progress-row"><span id="ocrStatus">正在准备识别…</span><span id="ocrPercent">0%</span></div>
+        <div class="progress-track"><div class="progress-bar" id="ocrBar"></div></div>
+      </div>
+      <p class="status" id="uploadStatus" aria-live="polite">识别会在浏览器本地完成，不会上传图片。</p>
+    </section>
+
+    <section class="step-card" aria-labelledby="step-words-title">
+      <div class="step-header">
+        <h2 class="step-title" id="step-words-title"><span class="step-number">2</span>确认单词</h2>
+        <div class="step-help">每行一个，也可以手动修改</div>
+      </div>
+      <div class="editor-wrap">
+        <label class="sr-only" for="wordEditor">单词列表，每行一个英文单词</label>
+        <textarea class="word-editor" id="wordEditor" spellcheck="false" placeholder="例如：\napple\nwindow\nhappy"></textarea>
+      </div>
+      <div class="editor-meta"><span id="wordCount">0 个单词</span><span class="tiny-actions"><button class="text-btn" id="useSample" type="button">试试示例</button><button class="text-btn" id="clearWords" type="button">清空</button></span></div>
+    </section>
+
+    <section class="step-card" aria-labelledby="step-settings-title">
+      <div class="step-header">
+        <h2 class="step-title" id="step-settings-title"><span class="step-number">3</span>调好听写节奏</h2>
+        <div class="step-help">随时可以暂停或重播</div>
+      </div>
+      <div class="settings-grid">
+        <div class="setting">
+          <div class="setting-label"><span>朗读速度</span><span class="setting-value" id="rateValue">0.85×</span></div>
+          <input id="rateRange" type="range" min="0.55" max="1.25" step="0.05" value="0.85" aria-label="朗读速度">
+          <div class="range-labels"><span>慢一点</span><span>自然</span><span>快一点</span></div>
+        </div>
+        <div class="setting">
+          <div class="setting-label"><span>单词间隔</span><span class="setting-value" id="gapValue">3 秒</span></div>
+          <input id="gapRange" type="range" min="1" max="8" step="1" value="3" aria-label="单词间隔">
+          <div class="range-labels"><span>紧凑</span><span>留时间书写</span></div>
+        </div>
+        <div class="setting">
+          <div class="setting-label"><span>每词朗读</span></div>
+          <select class="select-control" id="repeatSelect" aria-label="每词朗读次数"><option value="1">1 遍</option><option value="2" selected>2 遍（推荐）</option><option value="3">3 遍</option></select>
+        </div>
+        <div class="setting">
+          <div class="setting-label"><span>播放顺序</span></div>
+          <label class="switch-row"><span class="switch-copy">打乱顺序，避免背位置</span><span class="switch"><input id="shuffleToggle" type="checkbox" checked><span class="switch-track" aria-hidden="true"></span></span></label>
+        </div>
+      </div>
+    </section>
+
+    <section class="step-card session-card" aria-labelledby="step-session-title">
+      <div class="step-header">
+        <h2 class="step-title" id="step-session-title"><span class="step-number">4</span>开始听写</h2>
+        <div class="step-help">建议戴上耳机，专心听</div>
+      </div>
+      <div class="session-topline"><span id="sessionLabel">还没有开始</span><span class="session-count" id="sessionCount">0 / 0</span></div>
+      <div class="session-progress" aria-hidden="true"><div class="session-progress-bar" id="sessionProgressBar"></div></div>
+      <div class="listen-panel" aria-live="polite">
+        <div class="listen-icon" id="listenIcon" aria-hidden="true">◉</div>
+        <p class="listen-state" id="listenState">准备好后，按下开始吧</p>
+        <div class="answer hidden" id="answerText" aria-label="当前单词答案"></div>
+      </div>
+      <div class="session-controls">
+        <button class="control-btn primary" id="startButton" type="button">▶ 开始听写</button>
+        <button class="control-btn" id="pauseButton" type="button" disabled>Ⅱ 暂停</button>
+        <button class="control-btn secondary" id="replayButton" type="button" disabled>↺ 重播</button>
+        <button class="control-btn" id="answerButton" type="button" disabled>显示答案</button>
+        <button class="control-btn" id="nextButton" type="button" disabled>下一个 →</button>
+      </div>
+      <p class="session-hint" id="sessionHint">听不清可以重播；暂停后会从原来的位置继续。</p>
+    </section>
+
+    <p class="footer-note"><span aria-hidden="true">✿</span> 你的照片和单词只在这个浏览器里处理</p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+  <script>
+    (() => {
+      'use strict';
+
+      const $ = (id) => document.getElementById(id);
+      const els = {
+        dropzone: $('dropzone'), imageInput: $('imageInput'), previewImage: $('previewImage'), previewActions: $('previewActions'), replaceImage: $('replaceImage'), clearImage: $('clearImage'),
+        ocrProgress: $('ocrProgress'), ocrStatus: $('ocrStatus'), ocrPercent: $('ocrPercent'), ocrBar: $('ocrBar'), uploadStatus: $('uploadStatus'),
+        wordEditor: $('wordEditor'), wordCount: $('wordCount'), useSample: $('useSample'), clearWords: $('clearWords'),
+        rateRange: $('rateRange'), rateValue: $('rateValue'), gapRange: $('gapRange'), gapValue: $('gapValue'), repeatSelect: $('repeatSelect'), shuffleToggle: $('shuffleToggle'),
+        sessionLabel: $('sessionLabel'), sessionCount: $('sessionCount'), sessionProgressBar: $('sessionProgressBar'), listenIcon: $('listenIcon'), listenState: $('listenState'), answerText: $('answerText'),
+        startButton: $('startButton'), pauseButton: $('pauseButton'), replayButton: $('replayButton'), answerButton: $('answerButton'), nextButton: $('nextButton'), sessionHint: $('sessionHint')
+      };
+
+      const sampleWords = ['apple', 'window', 'garden', 'yellow', 'school', 'happy'];
+      const state = {
+        imageUrl: '', words: [], sequence: [], currentIndex: 0, repeatIndex: 0, isPlaying: false, isPaused: false,
+        utterance: null, speechToken: 0, gapTimer: null, gapStartedAt: 0, gapRemaining: 0, ocrBusy: false, ocrRunId: 0, queuedFile: null, answerVisible: false, voices: []
+      };
+
+      const settingsKey = 'wordwhiz-settings-v1';
+      const saved = (() => { try { return JSON.parse(localStorage.getItem(settingsKey) || '{}'); } catch (_) { return {}; } })();
+      if (saved.rate) els.rateRange.value = saved.rate;
+      if (saved.gap) els.gapRange.value = saved.gap;
+      if (saved.repeat) els.repeatSelect.value = saved.repeat;
+      if (typeof saved.shuffle === 'boolean') els.shuffleToggle.checked = saved.shuffle;
+
+      function saveSettings() {
+        try { localStorage.setItem(settingsKey, JSON.stringify({ rate: els.rateRange.value, gap: els.gapRange.value, repeat: els.repeatSelect.value, shuffle: els.shuffleToggle.checked })); } catch (_) { /* private browsing can disable storage */ }
+      }
+
+      function setUploadStatus(message, tone = '') { els.uploadStatus.textContent = message; els.uploadStatus.className = `status${tone ? ` ${tone}` : ''}`; }
+      function setOcrProgress(visible, message = '正在准备识别…', percent = 0) {
+        els.ocrProgress.classList.toggle('visible', visible); els.ocrStatus.textContent = message; els.ocrPercent.textContent = `${Math.round(percent)}%`; els.ocrBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+      }
+      function normalizeWords(raw) {
+        const found = (raw.match(/[A-Za-z][A-Za-z'-]*/g) || []).map((word) => word.replace(/^[-']+|[-']+$/g, '').toLowerCase()).filter((word) => word.length >= 2 && word.length <= 32);
+        return [...new Set(found)].slice(0, 50);
+      }
+      function wordsFromEditor() { return normalizeWords(els.wordEditor.value); }
+      function updateWordMeta() { const count = wordsFromEditor().length; els.wordCount.textContent = `${count} 个单词`; }
+      function setEditorWords(words) { els.wordEditor.value = words.join('\n'); updateWordMeta(); }
+
+      function chooseImage(file) {
+        if (!file || !file.type.startsWith('image/')) { setUploadStatus('请选择 JPG、PNG 或其他图片文件。', 'error'); return; }
+        if (state.imageUrl) URL.revokeObjectURL(state.imageUrl);
+        state.imageUrl = URL.createObjectURL(file); els.previewImage.src = state.imageUrl; els.dropzone.classList.add('has-preview'); els.previewActions.hidden = false;
+        setUploadStatus('图片已就绪，正在识别其中的英文单词…'); runOcr(file);
+      }
+
+      async function runOcr(file) {
+        const runId = ++state.ocrRunId;
+        if (state.ocrBusy) {
+          state.queuedFile = file;
+          setUploadStatus('新图片已排队，当前识别完成后会自动切换。');
+          return;
+        }
+        state.ocrBusy = true; setOcrProgress(true, '正在加载英文识别引擎…', 5);
+        let worker = null;
+        try {
+          if (!window.Tesseract) throw new Error('识别引擎尚未加载');
+          worker = await window.Tesseract.createWorker('eng', 1, { logger: (info) => {
+            const pct = typeof info.progress === 'number' ? 8 + info.progress * 88 : 10;
+            const label = info.status === 'recognizing text' ? '正在读取英文单词…' : '正在准备识别…';
+            if (runId === state.ocrRunId) setOcrProgress(true, label, pct);
+          }});
+          const result = await worker.recognize(file);
+          if (runId !== state.ocrRunId) return;
+          const words = normalizeWords(result?.data?.text || '');
+          if (!words.length) {
+            setUploadStatus('暂时没有读到清晰的英文单词，你可以在下方手动输入。', 'error');
+            setEditorWords([]);
+          } else {
+            setEditorWords(words); setUploadStatus(`识别完成，找到 ${words.length} 个单词。请先快速确认一下。`, 'success');
+          }
+          setOcrProgress(false);
+        } catch (error) {
+          console.warn(error);
+          if (runId === state.ocrRunId) {
+            setOcrProgress(false);
+            setUploadStatus('自动识别暂时不可用，但不影响使用：请在下方手动输入单词，或稍后重试。', 'error');
+          }
+        } finally {
+          if (worker) { try { await worker.terminate(); } catch (_) { /* worker may already be closed */ } }
+          state.ocrBusy = false;
+          const nextFile = state.queuedFile;
+          state.queuedFile = null;
+          if (nextFile) runOcr(nextFile);
+        }
+      }
+
+      function loadVoices() {
+        state.voices = window.speechSynthesis?.getVoices?.() || [];
+      }
+      function pickVoice() {
+        return state.voices.find((voice) => /^en(-|_)(US|GB|AU|CA)/i.test(voice.lang)) || state.voices.find((voice) => /^en/i.test(voice.lang)) || null;
+      }
+      function stopTimers() { if (state.gapTimer) { clearTimeout(state.gapTimer); state.gapTimer = null; } state.gapRemaining = 0; }
+      function cancelSpeech() { stopTimers(); state.speechToken += 1; if (window.speechSynthesis) window.speechSynthesis.cancel(); state.utterance = null; }
+
+      function setSessionText() {
+        const total = state.sequence.length; const current = total ? state.sequence[state.currentIndex] : '';
+        els.sessionCount.textContent = `${total ? state.currentIndex + 1 : 0} / ${total}`;
+        els.sessionProgressBar.style.width = `${total ? ((state.currentIndex + 1) / total) * 100 : 0}%`;
+        els.answerText.textContent = current;
+        els.answerText.classList.toggle('hidden', !state.answerVisible || !current);
+      }
+
+      function shuffle(words) {
+        const copy = [...words];
+        for (let i = copy.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [copy[i], copy[j]] = [copy[j], copy[i]]; }
+        return copy;
+      }
+
+      function finishSession() {
+        cancelSpeech(); state.isPlaying = false; state.isPaused = false; state.answerVisible = false;
+        els.listenIcon.textContent = '✓'; els.listenState.textContent = '这一轮完成啦！做得很棒。'; els.sessionLabel.textContent = '听写完成'; els.answerText.classList.add('hidden');
+        els.startButton.disabled = false; els.startButton.textContent = '↻ 再来一轮'; els.pauseButton.disabled = true; els.replayButton.disabled = true; els.answerButton.disabled = true; els.answerButton.textContent = '显示答案'; els.nextButton.disabled = true;
+        els.sessionHint.textContent = '可以调整速度或间隔，再来一轮巩固记忆。';
+      }
+
+      function scheduleNext() {
+        const gapMs = Number(els.gapRange.value) * 1000; state.gapRemaining = gapMs; state.gapStartedAt = performance.now();
+        stopTimers(); state.gapRemaining = gapMs; state.gapStartedAt = performance.now();
+        state.gapTimer = setTimeout(() => { state.gapTimer = null; state.gapRemaining = 0; advanceOrFinish(); }, gapMs);
+      }
+      function advanceOrFinish() {
+        state.repeatIndex += 1;
+        if (state.repeatIndex < Number(els.repeatSelect.value)) { speakCurrent(); return; }
+        if (state.currentIndex >= state.sequence.length - 1) { finishSession(); return; }
+        state.currentIndex += 1; state.repeatIndex = 0; state.answerVisible = false; setSessionText(); speakCurrent();
+      }
+      function speakCurrent() {
+        if (!state.isPlaying || state.isPaused) return;
+        const word = state.sequence[state.currentIndex]; if (!word) { finishSession(); return; }
+        if (!window.speechSynthesis) { els.listenState.textContent = `请朗读：${word}`; return; }
+        const speechToken = ++state.speechToken;
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(word); utterance.lang = 'en-US'; utterance.rate = Number(els.rateRange.value); utterance.pitch = 1.02; const voice = pickVoice(); if (voice) utterance.voice = voice;
+        state.utterance = utterance;
+        utterance.onstart = () => { if (!state.isPlaying || speechToken !== state.speechToken) return; els.listenIcon.textContent = '◉'; els.listenState.textContent = state.repeatIndex === 0 ? '正在朗读当前单词…' : `再听一遍…`; els.sessionLabel.textContent = `第 ${state.currentIndex + 1} 个单词`; };
+        utterance.onend = () => { if (speechToken === state.speechToken && state.isPlaying && !state.isPaused) scheduleNext(); };
+        utterance.onerror = (event) => { if (speechToken === state.speechToken && event.error !== 'canceled' && state.isPlaying) { els.listenState.textContent = '语音播放遇到一点小问题，请重播。'; } };
+        window.speechSynthesis.speak(utterance);
+      }
+      function startSession() {
+        const words = wordsFromEditor();
+        if (!words.length) { els.wordEditor.focus(); setUploadStatus('请先添加至少一个英文单词。', 'error'); return; }
+        saveSettings(); cancelSpeech(); state.words = words; state.sequence = els.shuffleToggle.checked ? shuffle(words) : [...words]; state.currentIndex = 0; state.repeatIndex = 0; state.isPlaying = true; state.isPaused = false; state.answerVisible = false;
+        els.startButton.disabled = true; els.startButton.textContent = '播放中'; els.pauseButton.disabled = false; els.replayButton.disabled = false; els.answerButton.disabled = false; els.answerButton.textContent = '显示答案'; els.nextButton.disabled = false; els.listenIcon.textContent = '◉'; els.sessionLabel.textContent = '准备中…'; els.sessionHint.textContent = '每个单词会按设置重复朗读；空格键也能暂停或继续。'; setSessionText(); speakCurrent();
+      }
+      function pauseSession() {
+        if (!state.isPlaying) return;
+        if (state.isPaused) {
+          state.isPaused = false; els.pauseButton.textContent = 'Ⅱ 暂停'; els.listenIcon.textContent = '◉';
+          if (state.gapRemaining > 0) { const remain = state.gapRemaining; stopTimers(); state.gapRemaining = remain; state.gapStartedAt = performance.now(); state.gapTimer = setTimeout(() => { state.gapTimer = null; state.gapRemaining = 0; advanceOrFinish(); }, remain); } else if (window.speechSynthesis?.paused) window.speechSynthesis.resume(); else speakCurrent();
+          els.listenState.textContent = '继续听写…'; return;
+        }
+        state.isPaused = true; els.pauseButton.textContent = '▶ 继续'; els.listenIcon.textContent = 'Ⅱ'; els.listenState.textContent = '已暂停，准备好后继续';
+        if (state.gapTimer) { const elapsed = performance.now() - state.gapStartedAt; state.gapRemaining = Math.max(150, state.gapRemaining - elapsed); clearTimeout(state.gapTimer); state.gapTimer = null; } else if (window.speechSynthesis?.speaking) window.speechSynthesis.pause();
+      }
+      function replayCurrent() { if (!state.isPlaying) return; cancelSpeech(); state.answerVisible = false; setSessionText(); speakCurrent(); }
+      function nextWord() { if (!state.isPlaying) return; cancelSpeech(); if (state.currentIndex >= state.sequence.length - 1) { finishSession(); return; } state.currentIndex += 1; state.repeatIndex = 0; state.answerVisible = false; setSessionText(); speakCurrent(); }
+      function toggleAnswer() { if (!state.isPlaying) return; state.answerVisible = !state.answerVisible; els.answerButton.textContent = state.answerVisible ? '隐藏答案' : '显示答案'; setSessionText(); }
+
+      els.imageInput.addEventListener('change', (event) => chooseImage(event.target.files?.[0]));
+      els.replaceImage.addEventListener('click', () => { els.imageInput.value = ''; els.imageInput.click(); });
+      els.clearImage.addEventListener('click', () => { state.ocrRunId += 1; state.queuedFile = null; if (state.imageUrl) URL.revokeObjectURL(state.imageUrl); state.imageUrl = ''; els.previewImage.removeAttribute('src'); els.dropzone.classList.remove('has-preview'); els.previewActions.hidden = true; els.imageInput.value = ''; setOcrProgress(false); setUploadStatus('图片已移除。你仍然可以在下方手动输入单词。'); });
+      ['dragenter', 'dragover'].forEach((eventName) => els.dropzone.addEventListener(eventName, (event) => { event.preventDefault(); els.dropzone.classList.add('dragging'); }));
+      ['dragleave', 'drop'].forEach((eventName) => els.dropzone.addEventListener(eventName, (event) => { event.preventDefault(); els.dropzone.classList.remove('dragging'); }));
+      els.dropzone.addEventListener('drop', (event) => chooseImage(event.dataTransfer?.files?.[0]));
+      els.wordEditor.addEventListener('input', updateWordMeta);
+      els.useSample.addEventListener('click', () => { setEditorWords(sampleWords); setUploadStatus('已放入一组示例单词，马上可以试播。', 'success'); });
+      els.clearWords.addEventListener('click', () => { setEditorWords([]); els.wordEditor.focus(); });
+      els.rateRange.addEventListener('input', () => { els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}×`; saveSettings(); });
+      els.gapRange.addEventListener('input', () => { els.gapValue.textContent = `${els.gapRange.value} 秒`; saveSettings(); });
+      [els.repeatSelect, els.shuffleToggle].forEach((element) => element.addEventListener('change', saveSettings));
+      els.startButton.addEventListener('click', startSession); els.pauseButton.addEventListener('click', pauseSession); els.replayButton.addEventListener('click', replayCurrent); els.nextButton.addEventListener('click', nextWord); els.answerButton.addEventListener('click', toggleAnswer);
+      document.addEventListener('keydown', (event) => { if (event.code === 'Space' && state.isPlaying && event.target.tagName !== 'TEXTAREA') { event.preventDefault(); pauseSession(); } });
+      window.speechSynthesis?.addEventListener?.('voiceschanged', loadVoices); loadVoices();
+      els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}×`; els.gapValue.textContent = `${els.gapRange.value} 秒`; updateWordMeta(); setSessionText();
+    })();
+  </script>
+</body>
+</html>

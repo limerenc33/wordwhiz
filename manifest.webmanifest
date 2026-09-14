@@ -1,0 +1,10 @@
+{
+  "name": "WordWhiz · 小小听写官",
+  "short_name": "WordWhiz",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4efe6",
+  "theme_color": "#fffaf2",
+  "description": "拍照识别英文单词，生成可暂停、可调速的听写练习。"
+}
