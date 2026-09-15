@@ -90,6 +90,8 @@
     .progress-row { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
     .progress-track { height: 8px; margin-top: 7px; border-radius: 999px; background: var(--soft); overflow: hidden; }
     .progress-bar { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--coral), #f5a866); transition: width .2s ease; }
+    .ocr-engine-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; color: var(--muted); font-size: 11px; }
+    .ocr-engine-line span:last-child { color: #3b805c; font-weight: 700; text-align: right; }
     .status { min-height: 21px; margin: 11px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
     .status.error { color: var(--coral-dark); }
     .status.success { color: #3b805c; }
@@ -135,7 +137,24 @@
     .control-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 43px; padding: 0 14px; border: 1px solid rgba(255,255,255,.18); border-radius: 13px; color: #e7eef4; background: rgba(255,255,255,.09); font-size: 13px; font-weight: 700; }
     .control-btn.primary { min-width: 148px; color: #fff; background: var(--coral); border-color: var(--coral); box-shadow: 0 9px 18px rgba(242,105,92,.22); }
     .control-btn.secondary { color: #fbdcd4; border-color: rgba(242,105,92,.46); }
+    .control-btn.danger { color: #ffc9c0; border-color: rgba(242,105,92,.36); }
     .session-hint { margin: 14px 0 0; color: #a9bbca; text-align: center; font-size: 11px; line-height: 1.55; }
+
+    .history-note { margin: -3px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .history-list { display: grid; gap: 10px; }
+    .history-empty { padding: 19px 14px; border: 1px dashed var(--line); border-radius: 15px; color: var(--muted); background: #fff; font-size: 12px; line-height: 1.55; text-align: center; }
+    .history-item { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 11px; border: 1px solid var(--line); border-radius: 15px; background: #fff; }
+    .history-thumb { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 12px; color: var(--coral-dark); background: #fff0e7; font-size: 20px; overflow: hidden; }
+    .history-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .history-main { min-width: 0; }
+    .history-item-title { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13px; font-weight: 800; }
+    .history-item-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .history-count { flex: 0 0 auto; color: var(--blue); font-size: 11px; font-weight: 700; }
+    .history-words { margin: 4px 0 3px; overflow: hidden; color: var(--ink); font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .history-meta { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .history-actions { display: flex; align-items: center; gap: 8px; }
+    .history-actions .text-btn { white-space: nowrap; }
+    .history-actions .delete-history { color: var(--coral-dark); }
 
     .footer-note { display: flex; justify-content: center; gap: 6px; margin: 22px 0 0; color: var(--muted); font-size: 11px; text-align: center; }
 
@@ -145,6 +164,14 @@
       .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .setting:first-child { grid-column: 1 / -1; }
       .session-card { padding: 24px; }
+    }
+
+    @media (max-width: 390px) {
+      .step-header { gap: 9px; }
+      .step-help { max-width: 125px; font-size: 11px; }
+      .history-item { grid-template-columns: 46px minmax(0, 1fr); }
+      .history-thumb { width: 46px; height: 46px; }
+      .history-actions { grid-column: 2; justify-content: flex-start; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -190,7 +217,8 @@
         <div class="progress-row"><span id="ocrStatus">正在准备识别…</span><span id="ocrPercent">0%</span></div>
         <div class="progress-track"><div class="progress-bar" id="ocrBar"></div></div>
       </div>
-      <p class="status" id="uploadStatus" aria-live="polite">识别会在浏览器本地完成，不会上传图片。</p>
+      <div class="ocr-engine-line"><span>识别策略</span><span id="ocrEngineStatus">PaddleOCR PP-OCRv5 优先 · 本地运行</span></div>
+      <p class="status" id="uploadStatus" aria-live="polite">图片会先做清晰化处理，再由 PaddleOCR 识别；不可用时自动回退到增强版 Tesseract。</p>
     </section>
 
     <section class="step-card" aria-labelledby="step-words-title">
@@ -250,8 +278,18 @@
         <button class="control-btn secondary" id="replayButton" type="button" disabled>↺ 重播</button>
         <button class="control-btn" id="answerButton" type="button" disabled>显示答案</button>
         <button class="control-btn" id="nextButton" type="button" disabled>下一个 →</button>
+        <button class="control-btn danger" id="clearSessionButton" type="button" disabled>× 清空本次</button>
       </div>
-      <p class="session-hint" id="sessionHint">听不清可以重播；暂停后会从原来的位置继续。</p>
+      <p class="session-hint" id="sessionHint">听不清可以重播；暂停后会从原来的位置继续。清空本次会立即停止并移除当前语音队列。</p>
+    </section>
+
+    <section class="step-card history-card" aria-labelledby="history-title">
+      <div class="step-header">
+        <h2 class="step-title" id="history-title"><span class="step-number">↺</span>历史记录</h2>
+        <button class="text-btn" id="clearHistoryButton" type="button" disabled>清空记录</button>
+      </div>
+      <p class="history-note">记录保存在这台设备，可恢复单词和听写节奏。浏览器语音无法导出成 mp3，但历史记录可以随时再次朗读。</p>
+      <div class="history-list" id="historyList" aria-live="polite"></div>
     </section>
 
     <p class="footer-note"><span aria-hidden="true">✿</span> 你的照片和单词只在这个浏览器里处理</p>
@@ -265,20 +303,25 @@
       const $ = (id) => document.getElementById(id);
       const els = {
         dropzone: $('dropzone'), imageInput: $('imageInput'), previewImage: $('previewImage'), previewActions: $('previewActions'), replaceImage: $('replaceImage'), clearImage: $('clearImage'),
-        ocrProgress: $('ocrProgress'), ocrStatus: $('ocrStatus'), ocrPercent: $('ocrPercent'), ocrBar: $('ocrBar'), uploadStatus: $('uploadStatus'),
+        ocrProgress: $('ocrProgress'), ocrStatus: $('ocrStatus'), ocrPercent: $('ocrPercent'), ocrBar: $('ocrBar'), uploadStatus: $('uploadStatus'), ocrEngineStatus: $('ocrEngineStatus'),
         wordEditor: $('wordEditor'), wordCount: $('wordCount'), useSample: $('useSample'), clearWords: $('clearWords'),
         rateRange: $('rateRange'), rateValue: $('rateValue'), gapRange: $('gapRange'), gapValue: $('gapValue'), repeatSelect: $('repeatSelect'), shuffleToggle: $('shuffleToggle'),
         sessionLabel: $('sessionLabel'), sessionCount: $('sessionCount'), sessionProgressBar: $('sessionProgressBar'), listenIcon: $('listenIcon'), listenState: $('listenState'), answerText: $('answerText'),
-        startButton: $('startButton'), pauseButton: $('pauseButton'), replayButton: $('replayButton'), answerButton: $('answerButton'), nextButton: $('nextButton'), sessionHint: $('sessionHint')
+        startButton: $('startButton'), pauseButton: $('pauseButton'), replayButton: $('replayButton'), answerButton: $('answerButton'), nextButton: $('nextButton'), clearSessionButton: $('clearSessionButton'), sessionHint: $('sessionHint'),
+        historyList: $('historyList'), clearHistoryButton: $('clearHistoryButton')
       };
 
       const sampleWords = ['apple', 'window', 'garden', 'yellow', 'school', 'happy'];
       const state = {
         imageUrl: '', words: [], sequence: [], currentIndex: 0, repeatIndex: 0, isPlaying: false, isPaused: false,
-        utterance: null, speechToken: 0, gapTimer: null, gapStartedAt: 0, gapRemaining: 0, ocrBusy: false, ocrRunId: 0, queuedFile: null, answerVisible: false, voices: []
+        utterance: null, speechToken: 0, gapTimer: null, gapStartedAt: 0, gapRemaining: 0, ocrBusy: false, ocrRunId: 0, queuedFile: null, answerVisible: false, voices: [],
+        paddlePromise: null, paddleEngine: null, activeHistoryId: null
       };
 
       const settingsKey = 'wordwhiz-settings-v1';
+      const historyKey = 'wordwhiz-history-v1';
+      const maxHistoryItems = 20;
+      let historyRecords = loadHistoryRecords();
       const saved = (() => { try { return JSON.parse(localStorage.getItem(settingsKey) || '{}'); } catch (_) { return {}; } })();
       if (saved.rate) els.rateRange.value = saved.rate;
       if (saved.gap) els.gapRange.value = saved.gap;
@@ -287,6 +330,155 @@
 
       function saveSettings() {
         try { localStorage.setItem(settingsKey, JSON.stringify({ rate: els.rateRange.value, gap: els.gapRange.value, repeat: els.repeatSelect.value, shuffle: els.shuffleToggle.checked })); } catch (_) { /* private browsing can disable storage */ }
+      }
+
+      function loadHistoryRecords() {
+        try {
+          const value = JSON.parse(localStorage.getItem(historyKey) || '[]');
+          return Array.isArray(value) ? value.filter((item) => item && Array.isArray(item.words)).slice(0, maxHistoryItems) : [];
+        } catch (_) { return []; }
+      }
+      function persistHistoryRecords() {
+        try {
+          localStorage.setItem(historyKey, JSON.stringify(historyRecords));
+        } catch (_) {
+          try { localStorage.setItem(historyKey, JSON.stringify(historyRecords.map(({ imageDataUrl, ...item }) => item))); } catch (_) { /* storage may be unavailable */ }
+        }
+      }
+      function currentSettings() {
+        return { rate: Number(els.rateRange.value), gap: Number(els.gapRange.value), repeat: Number(els.repeatSelect.value), shuffle: els.shuffleToggle.checked };
+      }
+      function makeHistoryId() { return `history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+      }
+      function formatHistoryDate(timestamp) {
+        try { return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(timestamp)); } catch (_) { return '刚刚'; }
+      }
+      function setEngineStatus(message, tone = '') {
+        els.ocrEngineStatus.textContent = message;
+        els.ocrEngineStatus.style.color = tone === 'error' ? 'var(--coral-dark)' : tone === 'busy' ? 'var(--blue)' : '#3b805c';
+      }
+      function setActiveHistory(id) {
+        state.activeHistoryId = id || null;
+        renderHistory();
+      }
+      function getHistoryRecord(id) { return historyRecords.find((item) => item.id === id) || null; }
+      function updateHistoryRecord(id, patch) {
+        const record = getHistoryRecord(id);
+        if (!record) return;
+        Object.assign(record, patch);
+        persistHistoryRecords();
+        renderHistory();
+      }
+      function createHistoryRecord({ words, imageDataUrl = null, engine = '手动输入', sourceName = '' }) {
+        const record = { id: makeHistoryId(), createdAt: Date.now(), updatedAt: Date.now(), sourceName, words: [...words], imageDataUrl, engine, settings: currentSettings(), sessionPlays: 0, lastPlayedAt: null, voiceMode: 'browser-speech-synthesis' };
+        historyRecords = [record, ...historyRecords].slice(0, maxHistoryItems);
+        persistHistoryRecords();
+        setActiveHistory(record.id);
+        return record;
+      }
+      function ensureHistoryForWords(words, engine = '手动输入') {
+        const active = getHistoryRecord(state.activeHistoryId);
+        if (active) {
+          updateHistoryRecord(active.id, { words: [...words], settings: currentSettings(), updatedAt: Date.now(), engine: active.engine || engine });
+          return active;
+        }
+        return createHistoryRecord({ words, engine });
+      }
+      function renderHistory() {
+        els.clearHistoryButton.disabled = historyRecords.length === 0;
+        if (!historyRecords.length) {
+          els.historyList.innerHTML = '<div class="history-empty">还没有记录。完成一次识别或开始一组手动单词后，记录会出现在这里。</div>';
+          return;
+        }
+        els.historyList.innerHTML = historyRecords.map((record) => {
+          const active = record.id === state.activeHistoryId ? ' · 当前' : '';
+          const words = record.words.slice(0, 7).join(' · ') + (record.words.length > 7 ? ' …' : '');
+          const settings = record.settings || {};
+          const engine = record.engine || '手动输入';
+          const rate = Number(settings.rate);
+          const gap = Number(settings.gap) || 3;
+          const thumb = record.imageDataUrl ? `<img src="${record.imageDataUrl}" alt="">` : '<span aria-hidden="true">✦</span>';
+          return `<article class="history-item${record.id === state.activeHistoryId ? ' active' : ''}" data-history-id="${escapeHtml(record.id)}">
+            <div class="history-thumb">${thumb}</div>
+            <div class="history-main"><div class="history-item-title"><strong>${escapeHtml(formatHistoryDate(record.createdAt))}${escapeHtml(active)}</strong><span class="history-count">${record.words.length} 词</span></div>
+            <p class="history-words">${escapeHtml(words)}</p><div class="history-meta">${escapeHtml(engine)} · ${Number.isFinite(rate) && rate > 0 ? `${rate.toFixed(2)}×` : '默认速度'} · 间隔 ${gap} 秒 · 已朗读 ${record.sessionPlays || 0} 次</div></div>
+            <div class="history-actions"><button class="text-btn" type="button" data-history-action="restore" data-history-id="${escapeHtml(record.id)}">恢复</button><button class="text-btn delete-history" type="button" data-history-action="delete" data-history-id="${escapeHtml(record.id)}" aria-label="删除这条历史记录">删除</button></div>
+          </article>`;
+        }).join('');
+        els.historyList.querySelectorAll('[data-history-action="restore"]').forEach((button) => button.addEventListener('click', () => restoreHistory(button.dataset.historyId)));
+        els.historyList.querySelectorAll('[data-history-action="delete"]').forEach((button) => button.addEventListener('click', () => deleteHistory(button.dataset.historyId)));
+      }
+      function deleteHistory(id) {
+        historyRecords = historyRecords.filter((item) => item.id !== id);
+        if (state.activeHistoryId === id) state.activeHistoryId = null;
+        persistHistoryRecords();
+        renderHistory();
+      }
+      function clearAllHistory() {
+        if (!historyRecords.length) return;
+        if (window.confirm && !window.confirm('清空所有历史记录？这只会删除本机保存的记录。')) return;
+        historyRecords = [];
+        state.activeHistoryId = null;
+        persistHistoryRecords();
+        renderHistory();
+      }
+      function releaseImagePreview() {
+        if (state.imageUrl && state.imageUrl.startsWith('blob:')) URL.revokeObjectURL(state.imageUrl);
+        state.imageUrl = '';
+        els.previewImage.removeAttribute('src');
+        els.dropzone.classList.remove('has-preview');
+        els.previewActions.hidden = true;
+      }
+      function restoreHistory(id) {
+        const record = getHistoryRecord(id);
+        if (!record) return;
+        resetSession(false);
+        releaseImagePreview();
+        els.imageInput.value = '';
+        setEditorWords(record.words);
+        const settings = record.settings || {};
+        if (settings.rate) els.rateRange.value = settings.rate;
+        if (settings.gap) els.gapRange.value = settings.gap;
+        if (settings.repeat) els.repeatSelect.value = settings.repeat;
+        if (typeof settings.shuffle === 'boolean') els.shuffleToggle.checked = settings.shuffle;
+        els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}×`;
+        els.gapValue.textContent = `${els.gapRange.value} 秒`;
+        if (record.imageDataUrl) {
+          els.previewImage.src = record.imageDataUrl;
+          els.dropzone.classList.add('has-preview');
+          els.previewActions.hidden = false;
+        }
+        setActiveHistory(record.id);
+        setUploadStatus(`已恢复 ${record.words.length} 个单词和上次听写节奏，可以重新开始。`, 'success');
+        window.scrollTo?.({ top: 0, behavior: 'smooth' });
+      }
+      function fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+      async function makeThumbnail(file) {
+        try {
+          const source = await fileToDataUrl(file);
+          const image = await new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = source; });
+          const scale = Math.min(1, 480 / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+          canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+          const context = canvas.getContext('2d');
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          return canvas.toDataURL('image/jpeg', .72);
+        } catch (_) { return null; }
+      }
+      async function saveRecognitionHistory(file, words, engine, runId) {
+        const imageDataUrl = await makeThumbnail(file);
+        if (runId !== state.ocrRunId) return;
+        createHistoryRecord({ words, imageDataUrl, engine, sourceName: file.name || '' });
       }
 
       function setUploadStatus(message, tone = '') { els.uploadStatus.textContent = message; els.uploadStatus.className = `status${tone ? ` ${tone}` : ''}`; }
@@ -303,9 +495,98 @@
 
       function chooseImage(file) {
         if (!file || !file.type.startsWith('image/')) { setUploadStatus('请选择 JPG、PNG 或其他图片文件。', 'error'); return; }
-        if (state.imageUrl) URL.revokeObjectURL(state.imageUrl);
+        cancelSpeech();
+        state.activeHistoryId = null;
+        if (state.imageUrl && state.imageUrl.startsWith('blob:')) URL.revokeObjectURL(state.imageUrl);
         state.imageUrl = URL.createObjectURL(file); els.previewImage.src = state.imageUrl; els.dropzone.classList.add('has-preview'); els.previewActions.hidden = false;
+        renderHistory();
         setUploadStatus('图片已就绪，正在识别其中的英文单词…'); runOcr(file);
+      }
+
+      function imageToBlob(canvas, type = 'image/jpeg', quality = .92) {
+        return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+      }
+      async function preprocessImage(file, mode = 'enhanced') {
+        const bitmap = window.createImageBitmap ? await window.createImageBitmap(file) : await new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = URL.createObjectURL(file); });
+        const sourceWidth = bitmap.width || bitmap.naturalWidth;
+        const sourceHeight = bitmap.height || bitmap.naturalHeight;
+        const maxSide = Math.max(sourceWidth, sourceHeight);
+        const scale = Math.min(1.5, 2200 / maxSide);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(sourceWidth * scale)); canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high'; context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        if (bitmap.close) bitmap.close();
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        let low = 255; let high = 0;
+        for (let i = 0; i < imageData.data.length; i += 4) { const value = .299 * imageData.data[i] + .587 * imageData.data[i + 1] + .114 * imageData.data[i + 2]; low = Math.min(low, value); high = Math.max(high, value); }
+        const spread = Math.max(40, high - low);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          const value = .299 * imageData.data[i] + .587 * imageData.data[i + 1] + .114 * imageData.data[i + 2];
+          let adjusted = ((value - low) / spread) * 255;
+          if (mode === 'bw') adjusted = adjusted > 166 ? 255 : 0;
+          imageData.data[i] = adjusted; imageData.data[i + 1] = adjusted; imageData.data[i + 2] = adjusted;
+        }
+        context.putImageData(imageData, 0, 0);
+        return (await imageToBlob(canvas)) || file;
+      }
+      async function prepareOcrImages(file) {
+        const enhanced = await preprocessImage(file, 'enhanced').catch(() => file);
+        const binary = await preprocessImage(file, 'bw').catch(() => enhanced);
+        return { original: file, enhanced, binary };
+      }
+      async function getPaddleEngine() {
+        if (state.paddleEngine) return state.paddleEngine;
+        if (!state.paddlePromise) {
+          state.paddlePromise = (async () => {
+            setEngineStatus('正在加载 PaddleOCR 模型…', 'busy');
+            const module = await import('https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js@0.4.2/+esm');
+            const engine = await module.PaddleOCR.create({ lang: 'en', ocrVersion: 'PP-OCRv5', ortOptions: { backend: 'wasm', wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/', numThreads: 1 } });
+            state.paddleEngine = engine;
+            return engine;
+          })().catch((error) => { state.paddlePromise = null; throw error; });
+        }
+        return state.paddlePromise;
+      }
+      function wordsFromPaddleResults(results) {
+        return normalizeWords(results.flatMap((result) => (result?.items || []).filter((item) => !Number.isFinite(item.score) || item.score >= .3).map((item) => item.text || '')).join('\n'));
+      }
+      function withTimeout(promise, milliseconds, message) {
+        let timer;
+        const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), milliseconds); });
+        return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+      }
+      async function recognizeWithPaddle(images, runId) {
+        const engine = await withTimeout(getPaddleEngine(), 45000, 'PaddleOCR 模型加载超时');
+        if (runId !== state.ocrRunId) return [];
+        setOcrProgress(true, 'PaddleOCR 正在检测文字区域…', 42); setEngineStatus('PaddleOCR PP-OCRv5 识别中…', 'busy');
+        const results = await engine.predict([images.enhanced, images.original], { textDetLimitSideLen: 2200, textRecScoreThresh: .3, textDetBoxThresh: .45 });
+        return wordsFromPaddleResults(results);
+      }
+      async function waitForTesseract() {
+        if (window.Tesseract) return window.Tesseract;
+        const deadline = Date.now() + 15000;
+        while (!window.Tesseract && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 250));
+        return window.Tesseract;
+      }
+      async function recognizeWithTesseract(images, runId) {
+        const tesseract = await waitForTesseract();
+        if (!tesseract) throw new Error('Tesseract.js 尚未加载');
+        setEngineStatus('增强版 Tesseract 回退识别中…', 'busy');
+        const worker = await tesseract.createWorker('eng', 1, { logger: (info) => {
+          const pct = typeof info.progress === 'number' ? 35 + info.progress * 55 : 38;
+          if (runId === state.ocrRunId) setOcrProgress(true, '回退识别正在读取英文…', pct);
+        }});
+        try {
+          if (worker.setParameters) await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+          const outputs = [];
+          for (const input of [images.enhanced, images.binary, images.original]) {
+            if (runId !== state.ocrRunId) return [];
+            const result = await worker.recognize(input);
+            outputs.push(result?.data?.text || '');
+          }
+          return normalizeWords(outputs.join('\n'));
+        } finally { await worker.terminate(); }
       }
 
       async function runOcr(file) {
@@ -315,33 +596,42 @@
           setUploadStatus('新图片已排队，当前识别完成后会自动切换。');
           return;
         }
-        state.ocrBusy = true; setOcrProgress(true, '正在加载英文识别引擎…', 5);
-        let worker = null;
+        state.ocrBusy = true; setOcrProgress(true, '正在清晰化图片…', 4);
         try {
-          if (!window.Tesseract) throw new Error('识别引擎尚未加载');
-          worker = await window.Tesseract.createWorker('eng', 1, { logger: (info) => {
-            const pct = typeof info.progress === 'number' ? 8 + info.progress * 88 : 10;
-            const label = info.status === 'recognizing text' ? '正在读取英文单词…' : '正在准备识别…';
-            if (runId === state.ocrRunId) setOcrProgress(true, label, pct);
-          }});
-          const result = await worker.recognize(file);
+          const images = await prepareOcrImages(file);
           if (runId !== state.ocrRunId) return;
-          const words = normalizeWords(result?.data?.text || '');
+          let words = [];
+          let engine = 'PaddleOCR PP-OCRv5';
+          try {
+            words = await recognizeWithPaddle(images, runId);
+          } catch (paddleError) {
+            console.warn('PaddleOCR unavailable, falling back to Tesseract.js', paddleError);
+            if (runId === state.ocrRunId) {
+              setEngineStatus('PaddleOCR 不可用 · 自动回退增强识别', 'busy');
+              setOcrProgress(true, 'PaddleOCR 未就绪，正在切换本地回退识别…', 28);
+            }
+            engine = '增强版 Tesseract.js';
+            words = await recognizeWithTesseract(images, runId);
+          }
+          if (runId !== state.ocrRunId) return;
           if (!words.length) {
             setUploadStatus('暂时没有读到清晰的英文单词，你可以在下方手动输入。', 'error');
             setEditorWords([]);
+            setEngineStatus(`${engine} · 未找到英文单词`, 'error');
           } else {
-            setEditorWords(words); setUploadStatus(`识别完成，找到 ${words.length} 个单词。请先快速确认一下。`, 'success');
+            setEditorWords(words); setUploadStatus(`${engine} 完成，找到 ${words.length} 个单词。请先快速确认一下。`, 'success');
+            setEngineStatus(`${engine} · ${words.length} 个候选词`, 'success');
+            await saveRecognitionHistory(file, words, engine, runId);
           }
           setOcrProgress(false);
         } catch (error) {
           console.warn(error);
           if (runId === state.ocrRunId) {
             setOcrProgress(false);
+            setEngineStatus('识别失败 · 可手动输入单词', 'error');
             setUploadStatus('自动识别暂时不可用，但不影响使用：请在下方手动输入单词，或稍后重试。', 'error');
           }
         } finally {
-          if (worker) { try { await worker.terminate(); } catch (_) { /* worker may already be closed */ } }
           state.ocrBusy = false;
           const nextFile = state.queuedFile;
           state.queuedFile = null;
@@ -372,15 +662,27 @@
         return copy;
       }
 
+      function resetSession(clearWords = false) {
+        cancelSpeech();
+        state.isPlaying = false; state.isPaused = false; state.sequence = []; state.currentIndex = 0; state.repeatIndex = 0; state.answerVisible = false;
+        if (clearWords) { setEditorWords([]); state.activeHistoryId = null; }
+        els.listenIcon.textContent = '◉'; els.listenState.textContent = '准备好后，按下开始吧'; els.sessionLabel.textContent = '还没有开始';
+        els.startButton.disabled = false; els.startButton.textContent = '▶ 开始听写'; els.pauseButton.disabled = true; els.pauseButton.textContent = 'Ⅱ 暂停'; els.replayButton.disabled = true; els.answerButton.disabled = true; els.answerButton.textContent = '显示答案'; els.nextButton.disabled = true; els.clearSessionButton.disabled = true;
+        els.sessionHint.textContent = '听不清可以重播；暂停后会从原来的位置继续。清空本次会立即停止并移除当前语音队列。';
+        setSessionText();
+        renderHistory();
+      }
       function finishSession() {
         cancelSpeech(); state.isPlaying = false; state.isPaused = false; state.answerVisible = false;
         els.listenIcon.textContent = '✓'; els.listenState.textContent = '这一轮完成啦！做得很棒。'; els.sessionLabel.textContent = '听写完成'; els.answerText.classList.add('hidden');
-        els.startButton.disabled = false; els.startButton.textContent = '↻ 再来一轮'; els.pauseButton.disabled = true; els.replayButton.disabled = true; els.answerButton.disabled = true; els.answerButton.textContent = '显示答案'; els.nextButton.disabled = true;
+        els.startButton.disabled = false; els.startButton.textContent = '↻ 再来一轮'; els.pauseButton.disabled = true; els.replayButton.disabled = true; els.answerButton.disabled = true; els.answerButton.textContent = '显示答案'; els.nextButton.disabled = true; els.clearSessionButton.disabled = true;
         els.sessionHint.textContent = '可以调整速度或间隔，再来一轮巩固记忆。';
+        const record = getHistoryRecord(state.activeHistoryId);
+        if (record) updateHistoryRecord(record.id, { updatedAt: Date.now(), lastPlayedAt: Date.now() });
       }
 
       function scheduleNext() {
-        const gapMs = Number(els.gapRange.value) * 1000; state.gapRemaining = gapMs; state.gapStartedAt = performance.now();
+        const gapMs = Number(els.gapRange.value) * 1000;
         stopTimers(); state.gapRemaining = gapMs; state.gapStartedAt = performance.now();
         state.gapTimer = setTimeout(() => { state.gapTimer = null; state.gapRemaining = 0; advanceOrFinish(); }, gapMs);
       }
@@ -406,8 +708,9 @@
       function startSession() {
         const words = wordsFromEditor();
         if (!words.length) { els.wordEditor.focus(); setUploadStatus('请先添加至少一个英文单词。', 'error'); return; }
-        saveSettings(); cancelSpeech(); state.words = words; state.sequence = els.shuffleToggle.checked ? shuffle(words) : [...words]; state.currentIndex = 0; state.repeatIndex = 0; state.isPlaying = true; state.isPaused = false; state.answerVisible = false;
-        els.startButton.disabled = true; els.startButton.textContent = '播放中'; els.pauseButton.disabled = false; els.replayButton.disabled = false; els.answerButton.disabled = false; els.answerButton.textContent = '显示答案'; els.nextButton.disabled = false; els.listenIcon.textContent = '◉'; els.sessionLabel.textContent = '准备中…'; els.sessionHint.textContent = '每个单词会按设置重复朗读；空格键也能暂停或继续。'; setSessionText(); speakCurrent();
+        saveSettings(); cancelSpeech(); const record = ensureHistoryForWords(words); state.activeHistoryId = record.id; updateHistoryRecord(record.id, { sessionPlays: (record.sessionPlays || 0) + 1, lastPlayedAt: Date.now(), settings: currentSettings(), updatedAt: Date.now() });
+        state.words = words; state.sequence = els.shuffleToggle.checked ? shuffle(words) : [...words]; state.currentIndex = 0; state.repeatIndex = 0; state.isPlaying = true; state.isPaused = false; state.answerVisible = false;
+        els.startButton.disabled = true; els.startButton.textContent = '播放中'; els.pauseButton.disabled = false; els.replayButton.disabled = false; els.answerButton.disabled = false; els.answerButton.textContent = '显示答案'; els.nextButton.disabled = false; els.clearSessionButton.disabled = false; els.listenIcon.textContent = '◉'; els.sessionLabel.textContent = '准备中…'; els.sessionHint.textContent = '每个单词会按设置重复朗读；空格键也能暂停或继续。'; setSessionText(); speakCurrent();
       }
       function pauseSession() {
         if (!state.isPlaying) return;
@@ -425,20 +728,20 @@
 
       els.imageInput.addEventListener('change', (event) => chooseImage(event.target.files?.[0]));
       els.replaceImage.addEventListener('click', () => { els.imageInput.value = ''; els.imageInput.click(); });
-      els.clearImage.addEventListener('click', () => { state.ocrRunId += 1; state.queuedFile = null; if (state.imageUrl) URL.revokeObjectURL(state.imageUrl); state.imageUrl = ''; els.previewImage.removeAttribute('src'); els.dropzone.classList.remove('has-preview'); els.previewActions.hidden = true; els.imageInput.value = ''; setOcrProgress(false); setUploadStatus('图片已移除。你仍然可以在下方手动输入单词。'); });
+      els.clearImage.addEventListener('click', () => { state.ocrRunId += 1; state.queuedFile = null; releaseImagePreview(); els.imageInput.value = ''; state.activeHistoryId = null; renderHistory(); setOcrProgress(false); setUploadStatus('图片已移除。你仍然可以在下方手动输入单词。'); });
       ['dragenter', 'dragover'].forEach((eventName) => els.dropzone.addEventListener(eventName, (event) => { event.preventDefault(); els.dropzone.classList.add('dragging'); }));
       ['dragleave', 'drop'].forEach((eventName) => els.dropzone.addEventListener(eventName, (event) => { event.preventDefault(); els.dropzone.classList.remove('dragging'); }));
       els.dropzone.addEventListener('drop', (event) => chooseImage(event.dataTransfer?.files?.[0]));
       els.wordEditor.addEventListener('input', updateWordMeta);
       els.useSample.addEventListener('click', () => { setEditorWords(sampleWords); setUploadStatus('已放入一组示例单词，马上可以试播。', 'success'); });
-      els.clearWords.addEventListener('click', () => { setEditorWords([]); els.wordEditor.focus(); });
+      els.clearWords.addEventListener('click', () => { resetSession(true); els.wordEditor.focus(); setUploadStatus('单词和当前听写已清空。'); });
       els.rateRange.addEventListener('input', () => { els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}×`; saveSettings(); });
       els.gapRange.addEventListener('input', () => { els.gapValue.textContent = `${els.gapRange.value} 秒`; saveSettings(); });
       [els.repeatSelect, els.shuffleToggle].forEach((element) => element.addEventListener('change', saveSettings));
-      els.startButton.addEventListener('click', startSession); els.pauseButton.addEventListener('click', pauseSession); els.replayButton.addEventListener('click', replayCurrent); els.nextButton.addEventListener('click', nextWord); els.answerButton.addEventListener('click', toggleAnswer);
+      els.startButton.addEventListener('click', startSession); els.pauseButton.addEventListener('click', pauseSession); els.replayButton.addEventListener('click', replayCurrent); els.nextButton.addEventListener('click', nextWord); els.answerButton.addEventListener('click', toggleAnswer); els.clearSessionButton.addEventListener('click', () => { resetSession(false); setUploadStatus('本次听写已清空，语音队列也已停止。'); }); els.clearHistoryButton.addEventListener('click', clearAllHistory);
       document.addEventListener('keydown', (event) => { if (event.code === 'Space' && state.isPlaying && event.target.tagName !== 'TEXTAREA') { event.preventDefault(); pauseSession(); } });
       window.speechSynthesis?.addEventListener?.('voiceschanged', loadVoices); loadVoices();
-      els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}×`; els.gapValue.textContent = `${els.gapRange.value} 秒`; updateWordMeta(); setSessionText();
+      els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}×`; els.gapValue.textContent = `${els.gapRange.value} 秒`; updateWordMeta(); setSessionText(); renderHistory();
     })();
   </script>
 </body>
