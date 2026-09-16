@@ -219,6 +219,7 @@
       </div>
       <div class="ocr-engine-line"><span>识别策略</span><span id="ocrEngineStatus">PaddleOCR PP-OCRv5 · 本地运行</span></div>
       <p class="status" id="uploadStatus" aria-live="polite">图片会先做清晰化处理，再由 PaddleOCR 识别。模型首次加载可能需要几十秒。</p>
+      <button class="text-btn" id="retryOcrButton" type="button" hidden>重试 PaddleOCR</button>
     </section>
 
     <section class="step-card" aria-labelledby="step-words-title">
@@ -307,7 +308,7 @@
       const $ = (id) => document.getElementById(id);
       const els = {
         dropzone: $('dropzone'), imageInput: $('imageInput'), previewImage: $('previewImage'), previewActions: $('previewActions'), replaceImage: $('replaceImage'), clearImage: $('clearImage'),
-        ocrProgress: $('ocrProgress'), ocrStatus: $('ocrStatus'), ocrPercent: $('ocrPercent'), ocrBar: $('ocrBar'), uploadStatus: $('uploadStatus'), ocrEngineStatus: $('ocrEngineStatus'),
+        ocrProgress: $('ocrProgress'), ocrStatus: $('ocrStatus'), ocrPercent: $('ocrPercent'), ocrBar: $('ocrBar'), uploadStatus: $('uploadStatus'), retryOcrButton: $('retryOcrButton'), ocrEngineStatus: $('ocrEngineStatus'),
         wordEditor: $('wordEditor'), wordCount: $('wordCount'), useSample: $('useSample'), clearWords: $('clearWords'),
         rateRange: $('rateRange'), rateValue: $('rateValue'), gapRange: $('gapRange'), gapValue: $('gapValue'), repeatSelect: $('repeatSelect'), voiceModeSelect: $('voiceModeSelect'), shuffleToggle: $('shuffleToggle'),
         sessionLabel: $('sessionLabel'), sessionCount: $('sessionCount'), sessionProgressBar: $('sessionProgressBar'), listenIcon: $('listenIcon'), listenState: $('listenState'), answerText: $('answerText'),
@@ -318,7 +319,7 @@
       const sampleWords = ['apple', 'window', 'garden', 'yellow', 'school', 'happy'];
       const state = {
         imageUrl: '', words: [], sequence: [], currentIndex: 0, repeatIndex: 0, isPlaying: false, isPaused: false,
-        utterance: null, speechToken: 0, gapTimer: null, gapStartedAt: 0, gapRemaining: 0, ocrBusy: false, ocrRunId: 0, queuedFile: null, answerVisible: false, voices: [],
+        utterance: null, speechToken: 0, gapTimer: null, gapStartedAt: 0, gapRemaining: 0, ocrBusy: false, ocrRunId: 0, queuedFile: null, lastOcrFile: null, answerVisible: false, voices: [],
         paddlePromise: null, paddleEngine: null, activeHistoryId: null, audio: new Audio(), audioUrl: '', audioCache: new Map(), audioUnlocked: false, kokoroPromise: null, kokoroTts: null, kokoroFetchInstalled: false, kokoroFailed: false, playbackKind: ''
       };
 
@@ -510,6 +511,7 @@
         state.activeHistoryId = null;
         if (state.imageUrl && state.imageUrl.startsWith('blob:')) URL.revokeObjectURL(state.imageUrl);
         state.imageUrl = URL.createObjectURL(file); els.previewImage.src = state.imageUrl; els.dropzone.classList.add('has-preview'); els.previewActions.hidden = false;
+        state.lastOcrFile = file; els.retryOcrButton.hidden = true;
         renderHistory();
         setUploadStatus('图片已就绪，正在识别其中的英文单词…'); runOcr(file);
       }
@@ -603,6 +605,7 @@
           } else {
             setEditorWords(words); setUploadStatus(`${engine} 完成，找到 ${words.length} 个单词。请先快速确认一下。`, 'success');
             setEngineStatus(`${engine} · ${words.length} 个候选词`, 'success');
+            els.retryOcrButton.hidden = true;
             await saveRecognitionHistory(file, words, engine, runId);
           }
           setOcrProgress(false);
@@ -612,6 +615,7 @@
             setOcrProgress(false);
             setEngineStatus('PaddleOCR 识别失败 · 请重试', 'error');
             setUploadStatus(`PaddleOCR 暂时无法完成识别：${error.message || '请检查网络后重试'}。不会切换其他 OCR。`, 'error');
+            els.retryOcrButton.hidden = !state.lastOcrFile;
           }
         } finally {
           state.ocrBusy = false;
@@ -795,10 +799,11 @@
 
       els.imageInput.addEventListener('change', (event) => chooseImage(event.target.files?.[0]));
       els.replaceImage.addEventListener('click', () => { els.imageInput.value = ''; els.imageInput.click(); });
-      els.clearImage.addEventListener('click', () => { state.ocrRunId += 1; state.queuedFile = null; releaseImagePreview(); els.imageInput.value = ''; state.activeHistoryId = null; renderHistory(); setOcrProgress(false); setUploadStatus('图片已移除。你仍然可以在下方手动输入单词。'); });
+      els.clearImage.addEventListener('click', () => { state.ocrRunId += 1; state.queuedFile = null; state.lastOcrFile = null; releaseImagePreview(); els.imageInput.value = ''; els.retryOcrButton.hidden = true; state.activeHistoryId = null; renderHistory(); setOcrProgress(false); setUploadStatus('图片已移除。你仍然可以在下方手动输入单词。'); });
       ['dragenter', 'dragover'].forEach((eventName) => els.dropzone.addEventListener(eventName, (event) => { event.preventDefault(); els.dropzone.classList.add('dragging'); }));
       ['dragleave', 'drop'].forEach((eventName) => els.dropzone.addEventListener(eventName, (event) => { event.preventDefault(); els.dropzone.classList.remove('dragging'); }));
       els.dropzone.addEventListener('drop', (event) => chooseImage(event.dataTransfer?.files?.[0]));
+      els.retryOcrButton.addEventListener('click', () => { if (!state.lastOcrFile || state.ocrBusy) return; els.retryOcrButton.hidden = true; setUploadStatus('正在重试 PaddleOCR…'); runOcr(state.lastOcrFile); });
       els.wordEditor.addEventListener('input', updateWordMeta);
       els.useSample.addEventListener('click', () => { setEditorWords(sampleWords); setUploadStatus('已放入一组示例单词，马上可以试播。', 'success'); });
       els.clearWords.addEventListener('click', () => { resetSession(true); els.wordEditor.focus(); setUploadStatus('单词和当前听写已清空。'); });
