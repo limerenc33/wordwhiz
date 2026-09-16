@@ -254,6 +254,11 @@
           <select class="select-control" id="repeatSelect" aria-label="每词朗读次数"><option value="1">1 遍</option><option value="2" selected>2 遍（推荐）</option><option value="3">3 遍</option></select>
         </div>
         <div class="setting">
+          <div class="setting-label"><span>语音音色</span></div>
+          <select class="select-control" id="voiceModeSelect" aria-label="语音音色"><option value="kokoro-female" selected>自然女声 · Kokoro（推荐）</option><option value="kokoro-male">自然男声 · Kokoro</option><option value="system">兼容模式 · 浏览器语音</option></select>
+          <div class="switch-copy" style="margin-top:8px">Kokoro 首次使用会下载约 92MB 模型，之后会缓存在本机。</div>
+        </div>
+        <div class="setting">
           <div class="setting-label"><span>播放顺序</span></div>
           <label class="switch-row"><span class="switch-copy">打乱顺序，避免背位置</span><span class="switch"><input id="shuffleToggle" type="checkbox" checked><span class="switch-track" aria-hidden="true"></span></span></label>
         </div>
@@ -288,7 +293,7 @@
         <h2 class="step-title" id="history-title"><span class="step-number">↺</span>历史记录</h2>
         <button class="text-btn" id="clearHistoryButton" type="button" disabled>清空记录</button>
       </div>
-      <p class="history-note">记录保存在这台设备，可恢复单词和听写节奏。浏览器语音无法导出成 mp3，但历史记录可以随时再次朗读。</p>
+      <p class="history-note">记录保存在这台设备，可恢复单词和听写节奏。Kokoro 音频会在本机重新生成；兼容模式使用浏览器语音。</p>
       <div class="history-list" id="historyList" aria-live="polite"></div>
     </section>
 
@@ -305,7 +310,7 @@
         dropzone: $('dropzone'), imageInput: $('imageInput'), previewImage: $('previewImage'), previewActions: $('previewActions'), replaceImage: $('replaceImage'), clearImage: $('clearImage'),
         ocrProgress: $('ocrProgress'), ocrStatus: $('ocrStatus'), ocrPercent: $('ocrPercent'), ocrBar: $('ocrBar'), uploadStatus: $('uploadStatus'), ocrEngineStatus: $('ocrEngineStatus'),
         wordEditor: $('wordEditor'), wordCount: $('wordCount'), useSample: $('useSample'), clearWords: $('clearWords'),
-        rateRange: $('rateRange'), rateValue: $('rateValue'), gapRange: $('gapRange'), gapValue: $('gapValue'), repeatSelect: $('repeatSelect'), shuffleToggle: $('shuffleToggle'),
+        rateRange: $('rateRange'), rateValue: $('rateValue'), gapRange: $('gapRange'), gapValue: $('gapValue'), repeatSelect: $('repeatSelect'), voiceModeSelect: $('voiceModeSelect'), shuffleToggle: $('shuffleToggle'),
         sessionLabel: $('sessionLabel'), sessionCount: $('sessionCount'), sessionProgressBar: $('sessionProgressBar'), listenIcon: $('listenIcon'), listenState: $('listenState'), answerText: $('answerText'),
         startButton: $('startButton'), pauseButton: $('pauseButton'), replayButton: $('replayButton'), answerButton: $('answerButton'), nextButton: $('nextButton'), clearSessionButton: $('clearSessionButton'), sessionHint: $('sessionHint'),
         historyList: $('historyList'), clearHistoryButton: $('clearHistoryButton')
@@ -315,7 +320,7 @@
       const state = {
         imageUrl: '', words: [], sequence: [], currentIndex: 0, repeatIndex: 0, isPlaying: false, isPaused: false,
         utterance: null, speechToken: 0, gapTimer: null, gapStartedAt: 0, gapRemaining: 0, ocrBusy: false, ocrRunId: 0, queuedFile: null, answerVisible: false, voices: [],
-        paddlePromise: null, paddleEngine: null, activeHistoryId: null
+        paddlePromise: null, paddleEngine: null, activeHistoryId: null, audio: new Audio(), audioUrl: '', audioCache: new Map(), audioUnlocked: false, kokoroPromise: null, kokoroTts: null, kokoroFetchInstalled: false, kokoroFailed: false, playbackKind: ''
       };
 
       const settingsKey = 'wordwhiz-settings-v1';
@@ -326,10 +331,11 @@
       if (saved.rate) els.rateRange.value = saved.rate;
       if (saved.gap) els.gapRange.value = saved.gap;
       if (saved.repeat) els.repeatSelect.value = saved.repeat;
+      if (saved.voice && ['kokoro-female', 'kokoro-male', 'system'].includes(saved.voice)) els.voiceModeSelect.value = saved.voice;
       if (typeof saved.shuffle === 'boolean') els.shuffleToggle.checked = saved.shuffle;
 
       function saveSettings() {
-        try { localStorage.setItem(settingsKey, JSON.stringify({ rate: els.rateRange.value, gap: els.gapRange.value, repeat: els.repeatSelect.value, shuffle: els.shuffleToggle.checked })); } catch (_) { /* private browsing can disable storage */ }
+        try { localStorage.setItem(settingsKey, JSON.stringify({ rate: els.rateRange.value, gap: els.gapRange.value, repeat: els.repeatSelect.value, voice: els.voiceModeSelect.value, shuffle: els.shuffleToggle.checked })); } catch (_) { /* private browsing can disable storage */ }
       }
 
       function loadHistoryRecords() {
@@ -346,7 +352,10 @@
         }
       }
       function currentSettings() {
-        return { rate: Number(els.rateRange.value), gap: Number(els.gapRange.value), repeat: Number(els.repeatSelect.value), shuffle: els.shuffleToggle.checked };
+        return { rate: Number(els.rateRange.value), gap: Number(els.gapRange.value), repeat: Number(els.repeatSelect.value), voice: els.voiceModeSelect.value, shuffle: els.shuffleToggle.checked };
+      }
+      function voiceLabel(value) {
+        return value === 'kokoro-male' ? 'Kokoro 男声' : ['system', 'browser-speech-synthesis'].includes(value) ? '浏览器语音' : 'Kokoro 女声';
       }
       function makeHistoryId() { return `history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
       function escapeHtml(value) {
@@ -372,7 +381,7 @@
         renderHistory();
       }
       function createHistoryRecord({ words, imageDataUrl = null, engine = '手动输入', sourceName = '' }) {
-        const record = { id: makeHistoryId(), createdAt: Date.now(), updatedAt: Date.now(), sourceName, words: [...words], imageDataUrl, engine, settings: currentSettings(), sessionPlays: 0, lastPlayedAt: null, voiceMode: 'browser-speech-synthesis' };
+        const record = { id: makeHistoryId(), createdAt: Date.now(), updatedAt: Date.now(), sourceName, words: [...words], imageDataUrl, engine, settings: currentSettings(), sessionPlays: 0, lastPlayedAt: null, voiceMode: currentSettings().voice };
         historyRecords = [record, ...historyRecords].slice(0, maxHistoryItems);
         persistHistoryRecords();
         setActiveHistory(record.id);
@@ -381,7 +390,7 @@
       function ensureHistoryForWords(words, engine = '手动输入') {
         const active = getHistoryRecord(state.activeHistoryId);
         if (active) {
-          updateHistoryRecord(active.id, { words: [...words], settings: currentSettings(), updatedAt: Date.now(), engine: active.engine || engine });
+          updateHistoryRecord(active.id, { words: [...words], settings: currentSettings(), voiceMode: currentSettings().voice, updatedAt: Date.now(), engine: active.engine || engine });
           return active;
         }
         return createHistoryRecord({ words, engine });
@@ -403,7 +412,7 @@
           return `<article class="history-item${record.id === state.activeHistoryId ? ' active' : ''}" data-history-id="${escapeHtml(record.id)}">
             <div class="history-thumb">${thumb}</div>
             <div class="history-main"><div class="history-item-title"><strong>${escapeHtml(formatHistoryDate(record.createdAt))}${escapeHtml(active)}</strong><span class="history-count">${record.words.length} 词</span></div>
-            <p class="history-words">${escapeHtml(words)}</p><div class="history-meta">${escapeHtml(engine)} · ${Number.isFinite(rate) && rate > 0 ? `${rate.toFixed(2)}×` : '默认速度'} · 间隔 ${gap} 秒 · 已朗读 ${record.sessionPlays || 0} 次</div></div>
+            <p class="history-words">${escapeHtml(words)}</p><div class="history-meta">${escapeHtml(engine)} · ${escapeHtml(voiceLabel(settings.voice || record.voiceMode || 'system'))} · ${Number.isFinite(rate) && rate > 0 ? `${rate.toFixed(2)}×` : '默认速度'} · 间隔 ${gap} 秒 · 已朗读 ${record.sessionPlays || 0} 次</div></div>
             <div class="history-actions"><button class="text-btn" type="button" data-history-action="restore" data-history-id="${escapeHtml(record.id)}">恢复</button><button class="text-btn delete-history" type="button" data-history-action="delete" data-history-id="${escapeHtml(record.id)}" aria-label="删除这条历史记录">删除</button></div>
           </article>`;
         }).join('');
@@ -442,6 +451,9 @@
         if (settings.rate) els.rateRange.value = settings.rate;
         if (settings.gap) els.gapRange.value = settings.gap;
         if (settings.repeat) els.repeatSelect.value = settings.repeat;
+        const restoredVoice = settings.voice || record.voiceMode;
+        if (['kokoro-female', 'kokoro-male', 'system'].includes(restoredVoice)) els.voiceModeSelect.value = restoredVoice;
+        else if (restoredVoice === 'browser-speech-synthesis') els.voiceModeSelect.value = 'system';
         if (typeof settings.shuffle === 'boolean') els.shuffleToggle.checked = settings.shuffle;
         els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}×`;
         els.gapValue.textContent = `${els.gapRange.value} 秒`;
@@ -646,7 +658,60 @@
         return state.voices.find((voice) => /^en(-|_)(US|GB|AU|CA)/i.test(voice.lang)) || state.voices.find((voice) => /^en/i.test(voice.lang)) || null;
       }
       function stopTimers() { if (state.gapTimer) { clearTimeout(state.gapTimer); state.gapTimer = null; } state.gapRemaining = 0; }
-      function cancelSpeech() { stopTimers(); state.speechToken += 1; if (window.speechSynthesis) window.speechSynthesis.cancel(); state.utterance = null; }
+      function installKokoroFetchRewrite() {
+        if (state.kokoroFetchInstalled) return;
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = (input, init) => {
+          const rawUrl = typeof input === 'string' ? input : input?.url;
+          const match = rawUrl?.match(/^https:\/\/huggingface\.co\/onnx-community\/Kokoro-82M-v1\.0-ONNX\/resolve\/main\/voices\/([^?]+)/);
+          if (match) return originalFetch(new URL(`kokoro-model/voices/${match[1]}`, document.baseURI).href, init);
+          return originalFetch(input, init);
+        };
+        state.kokoroFetchInstalled = true;
+      }
+      async function getKokoroTts() {
+        if (state.kokoroTts) return state.kokoroTts;
+        if (state.kokoroFailed) throw new Error('Kokoro 自然音色不可用');
+        if (!state.kokoroPromise) {
+          state.kokoroPromise = (async () => {
+            installKokoroFetchRewrite();
+            setUploadStatus('正在加载自然音色，首次使用约需下载 92MB…');
+            const transformers = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1/+esm');
+            transformers.env.allowLocalModels = true;
+            transformers.env.allowRemoteModels = false;
+            transformers.env.localModelPath = './';
+            const module = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm');
+            const tts = await withTimeout(module.KokoroTTS.from_pretrained('./kokoro-model', { dtype: 'q8', device: 'wasm' }), 120000, 'Kokoro 自然音色加载超时');
+            state.kokoroTts = tts;
+            setUploadStatus('自然音色已就绪，语音会在本机生成。', 'success');
+            return tts;
+          })().catch((error) => { state.kokoroPromise = null; state.kokoroFailed = true; throw error; });
+        }
+        return state.kokoroPromise;
+      }
+      function selectedKokoroVoice() { return els.voiceModeSelect.value === 'kokoro-male' ? 'am_michael' : 'af_heart'; }
+      function revokeAudioUrl() {
+        if (state.audioUrl) URL.revokeObjectURL(state.audioUrl);
+        state.audioUrl = '';
+      }
+      function stopAudio() {
+        state.audio.pause(); state.audio.onplay = null; state.audio.onended = null; state.audio.onerror = null;
+        revokeAudioUrl(); state.audio.removeAttribute('src'); state.audio.load(); state.playbackKind = '';
+      }
+      function unlockKokoroAudio() {
+        if (state.audioUnlocked || els.voiceModeSelect.value === 'system') return;
+        const buffer = new ArrayBuffer(46); const view = new DataView(buffer); const write = (offset, value) => [...value].forEach((char, index) => view.setUint8(offset + index, char.charCodeAt(0)));
+        write(0, 'RIFF'); view.setUint32(4, 38, true); write(8, 'WAVE'); write(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, 8000, true); view.setUint32(28, 16000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); write(36, 'data'); view.setUint32(40, 2, true);
+        const url = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' })); state.audio.src = url;
+        const promise = state.audio.play();
+        if (!promise) { state.audioUnlocked = true; return; }
+        promise.then(() => { state.audioUnlocked = true; state.audio.pause(); state.audio.removeAttribute('src'); state.audio.load(); URL.revokeObjectURL(url); }).catch(() => { URL.revokeObjectURL(url); });
+      }
+      function cancelSpeech() {
+        stopTimers(); state.speechToken += 1;
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        stopAudio(); state.utterance = null;
+      }
 
       function setSessionText() {
         const total = state.sequence.length; const current = total ? state.sequence[state.currentIndex] : '';
@@ -692,12 +757,9 @@
         if (state.currentIndex >= state.sequence.length - 1) { finishSession(); return; }
         state.currentIndex += 1; state.repeatIndex = 0; state.answerVisible = false; setSessionText(); speakCurrent();
       }
-      function speakCurrent() {
-        if (!state.isPlaying || state.isPaused) return;
-        const word = state.sequence[state.currentIndex]; if (!word) { finishSession(); return; }
+      function speakWithSystem(word, speechToken) {
         if (!window.speechSynthesis) { els.listenState.textContent = `请朗读：${word}`; return; }
-        const speechToken = ++state.speechToken;
-        window.speechSynthesis.cancel();
+        state.playbackKind = 'system';
         const utterance = new SpeechSynthesisUtterance(word); utterance.lang = 'en-US'; utterance.rate = Number(els.rateRange.value); utterance.pitch = 1.02; const voice = pickVoice(); if (voice) utterance.voice = voice;
         state.utterance = utterance;
         utterance.onstart = () => { if (!state.isPlaying || speechToken !== state.speechToken) return; els.listenIcon.textContent = '◉'; els.listenState.textContent = state.repeatIndex === 0 ? '正在朗读当前单词…' : `再听一遍…`; els.sessionLabel.textContent = `第 ${state.currentIndex + 1} 个单词`; };
@@ -705,10 +767,45 @@
         utterance.onerror = (event) => { if (speechToken === state.speechToken && event.error !== 'canceled' && state.isPlaying) { els.listenState.textContent = '语音播放遇到一点小问题，请重播。'; } };
         window.speechSynthesis.speak(utterance);
       }
+      async function getKokoroAudio(word) {
+        const voice = selectedKokoroVoice();
+        const key = `${voice}:${word}:${Number(els.rateRange.value).toFixed(2)}`;
+        if (state.audioCache.has(key)) return state.audioCache.get(key);
+        const tts = await getKokoroTts();
+        els.listenState.textContent = '正在生成自然音色…';
+        const generated = await tts.generate(word, { voice, speed: Number(els.rateRange.value) });
+        const blob = generated.toBlob();
+        state.audioCache.set(key, blob);
+        while (state.audioCache.size > 30) state.audioCache.delete(state.audioCache.keys().next().value);
+        return blob;
+      }
+      async function speakWithKokoro(word, speechToken) {
+        try {
+          const blob = await getKokoroAudio(word);
+          if (!state.isPlaying || state.isPaused || speechToken !== state.speechToken) return;
+          stopAudio(); state.playbackKind = 'kokoro'; state.audioUrl = URL.createObjectURL(blob); state.audio.src = state.audioUrl;
+          state.audio.onplay = () => { if (!state.isPlaying || speechToken !== state.speechToken) return; els.listenIcon.textContent = '◉'; els.listenState.textContent = state.repeatIndex === 0 ? '正在播放自然音色…' : '再听一遍…'; els.sessionLabel.textContent = `第 ${state.currentIndex + 1} 个单词`; };
+          state.audio.onended = () => { if (speechToken === state.speechToken && state.isPlaying && !state.isPaused) scheduleNext(); };
+          state.audio.onerror = () => { if (speechToken === state.speechToken && state.isPlaying) { state.playbackKind = ''; els.listenState.textContent = '自然音色播放失败，正在切换兼容模式…'; speakWithSystem(word, speechToken); } };
+          await state.audio.play();
+        } catch (error) {
+          console.warn('Kokoro TTS unavailable, falling back to browser speech', error);
+          if (speechToken !== state.speechToken || !state.isPlaying || state.isPaused) return;
+          state.kokoroFailed = true; setUploadStatus('自然音色暂时不可用，已自动切换兼容模式。'); speakWithSystem(word, speechToken);
+        }
+      }
+      function speakCurrent() {
+        if (!state.isPlaying || state.isPaused) return;
+        const word = state.sequence[state.currentIndex]; if (!word) { finishSession(); return; }
+        const speechToken = ++state.speechToken;
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        if (els.voiceModeSelect.value === 'system' || state.kokoroFailed) speakWithSystem(word, speechToken);
+        else speakWithKokoro(word, speechToken);
+      }
       function startSession() {
         const words = wordsFromEditor();
         if (!words.length) { els.wordEditor.focus(); setUploadStatus('请先添加至少一个英文单词。', 'error'); return; }
-        saveSettings(); cancelSpeech(); const record = ensureHistoryForWords(words); state.activeHistoryId = record.id; updateHistoryRecord(record.id, { sessionPlays: (record.sessionPlays || 0) + 1, lastPlayedAt: Date.now(), settings: currentSettings(), updatedAt: Date.now() });
+        saveSettings(); cancelSpeech(); unlockKokoroAudio(); const record = ensureHistoryForWords(words); state.activeHistoryId = record.id; updateHistoryRecord(record.id, { sessionPlays: (record.sessionPlays || 0) + 1, lastPlayedAt: Date.now(), settings: currentSettings(), voiceMode: currentSettings().voice, updatedAt: Date.now() });
         state.words = words; state.sequence = els.shuffleToggle.checked ? shuffle(words) : [...words]; state.currentIndex = 0; state.repeatIndex = 0; state.isPlaying = true; state.isPaused = false; state.answerVisible = false;
         els.startButton.disabled = true; els.startButton.textContent = '播放中'; els.pauseButton.disabled = false; els.replayButton.disabled = false; els.answerButton.disabled = false; els.answerButton.textContent = '显示答案'; els.nextButton.disabled = false; els.clearSessionButton.disabled = false; els.listenIcon.textContent = '◉'; els.sessionLabel.textContent = '准备中…'; els.sessionHint.textContent = '每个单词会按设置重复朗读；空格键也能暂停或继续。'; setSessionText(); speakCurrent();
       }
@@ -716,11 +813,11 @@
         if (!state.isPlaying) return;
         if (state.isPaused) {
           state.isPaused = false; els.pauseButton.textContent = 'Ⅱ 暂停'; els.listenIcon.textContent = '◉';
-          if (state.gapRemaining > 0) { const remain = state.gapRemaining; stopTimers(); state.gapRemaining = remain; state.gapStartedAt = performance.now(); state.gapTimer = setTimeout(() => { state.gapTimer = null; state.gapRemaining = 0; advanceOrFinish(); }, remain); } else if (window.speechSynthesis?.paused) window.speechSynthesis.resume(); else speakCurrent();
+          if (state.gapRemaining > 0) { const remain = state.gapRemaining; stopTimers(); state.gapRemaining = remain; state.gapStartedAt = performance.now(); state.gapTimer = setTimeout(() => { state.gapTimer = null; state.gapRemaining = 0; advanceOrFinish(); }, remain); } else if (state.playbackKind === 'kokoro' && state.audio.src) state.audio.play().catch(() => speakCurrent()); else if (window.speechSynthesis?.paused) window.speechSynthesis.resume(); else speakCurrent();
           els.listenState.textContent = '继续听写…'; return;
         }
         state.isPaused = true; els.pauseButton.textContent = '▶ 继续'; els.listenIcon.textContent = 'Ⅱ'; els.listenState.textContent = '已暂停，准备好后继续';
-        if (state.gapTimer) { const elapsed = performance.now() - state.gapStartedAt; state.gapRemaining = Math.max(150, state.gapRemaining - elapsed); clearTimeout(state.gapTimer); state.gapTimer = null; } else if (window.speechSynthesis?.speaking) window.speechSynthesis.pause();
+        if (state.gapTimer) { const elapsed = performance.now() - state.gapStartedAt; state.gapRemaining = Math.max(150, state.gapRemaining - elapsed); clearTimeout(state.gapTimer); state.gapTimer = null; } else if (state.playbackKind === 'kokoro' && !state.audio.paused) state.audio.pause(); else if (window.speechSynthesis?.speaking) window.speechSynthesis.pause();
       }
       function replayCurrent() { if (!state.isPlaying) return; cancelSpeech(); state.answerVisible = false; setSessionText(); speakCurrent(); }
       function nextWord() { if (!state.isPlaying) return; cancelSpeech(); if (state.currentIndex >= state.sequence.length - 1) { finishSession(); return; } state.currentIndex += 1; state.repeatIndex = 0; state.answerVisible = false; setSessionText(); speakCurrent(); }
@@ -735,9 +832,14 @@
       els.wordEditor.addEventListener('input', updateWordMeta);
       els.useSample.addEventListener('click', () => { setEditorWords(sampleWords); setUploadStatus('已放入一组示例单词，马上可以试播。', 'success'); });
       els.clearWords.addEventListener('click', () => { resetSession(true); els.wordEditor.focus(); setUploadStatus('单词和当前听写已清空。'); });
-      els.rateRange.addEventListener('input', () => { els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}×`; saveSettings(); });
+      els.rateRange.addEventListener('input', () => { els.rateValue.textContent = `${Number(els.rateRange.value).toFixed(2)}×`; state.audioCache.clear(); saveSettings(); });
       els.gapRange.addEventListener('input', () => { els.gapValue.textContent = `${els.gapRange.value} 秒`; saveSettings(); });
-      [els.repeatSelect, els.shuffleToggle].forEach((element) => element.addEventListener('change', saveSettings));
+      [els.repeatSelect, els.voiceModeSelect, els.shuffleToggle].forEach((element) => element.addEventListener('change', () => {
+        const resume = element === els.voiceModeSelect && state.isPlaying && !state.isPaused;
+        if (element === els.voiceModeSelect) { state.kokoroFailed = false; cancelSpeech(); unlockKokoroAudio(); }
+        saveSettings();
+        if (resume) speakCurrent();
+      }));
       els.startButton.addEventListener('click', startSession); els.pauseButton.addEventListener('click', pauseSession); els.replayButton.addEventListener('click', replayCurrent); els.nextButton.addEventListener('click', nextWord); els.answerButton.addEventListener('click', toggleAnswer); els.clearSessionButton.addEventListener('click', () => { resetSession(false); setUploadStatus('本次听写已清空，语音队列也已停止。'); }); els.clearHistoryButton.addEventListener('click', clearAllHistory);
       document.addEventListener('keydown', (event) => { if (event.code === 'Space' && state.isPlaying && event.target.tagName !== 'TEXTAREA') { event.preventDefault(); pauseSession(); } });
       window.speechSynthesis?.addEventListener?.('voiceschanged', loadVoices); loadVoices();

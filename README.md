@@ -32,11 +32,15 @@ python3 -m http.server 8080 --directory /Users/didi/word-dictation-tool
 - OCR 结果可编辑、去重、手动补充
 - 朗读速度 0.55×–1.25×、单词间隔 1–8 秒
 - 每词 1/2/3 遍、随机顺序
+- Kokoro 82M 本地神经语音（自然女声/男声），首次下载模型后缓存在浏览器
+- 浏览器语音兼容模式，适合低性能设备或模型加载失败时使用
 - 暂停/继续、重播、显示答案、下一个
 - “清空本次”会立即停止语音并重置当前听写，不需要退出网页
 - 历史记录保存在本机，可恢复单词、图片缩略图和听写设置，最多保留 20 条
-- 语音由浏览器 Web Speech API 提供，图片不会发送到应用自己的服务器
+- Kokoro 语音在浏览器本机生成，兼容模式使用 Web Speech API；图片和单词不会发送到应用自己的服务器
 
 ## 注意
 
-首次识别需要联网从 CDN 加载 PaddleOCR/Tesseract 资源；网络不可用时仍可以手动输入单词并使用听写功能。浏览器的 `speechSynthesis` 只提供即时朗读，历史记录保存的是可恢复的朗读会话和设置，不是 mp3 文件。不同手机浏览器提供的英文语音音色会略有差异。
+首次识别需要联网从 CDN 加载 PaddleOCR/Tesseract 资源；首次使用 Kokoro 自然音色还会从本站加载约 92MB 的量化模型，之后由浏览器缓存。网络不可用时仍可以手动输入单词并使用兼容模式。Kokoro 音频只在本机生成，不会上传图片或单词；历史记录保存的是可恢复的朗读会话和设置，不是 mp3 文件。
+
+Kokoro 模型采用 Apache-2.0 许可，模型文件位于 `kokoro-model/`，来源为 [onnx-community/Kokoro-82M-v1.0-ONNX](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)。
