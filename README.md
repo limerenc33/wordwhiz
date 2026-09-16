@@ -10,7 +10,7 @@
 python3 -m http.server 8080 --directory /Users/didi/word-dictation-tool
 ```
 
-然后在手机浏览器打开同一局域网地址。首次 OCR 需要联网加载 PaddleOCR JS 运行时；PP-OCRv5 模型包已随网页自托管，避免手机访问第三方模型站点失败。
+然后在手机浏览器打开同一局域网地址。OCR、自然语音的 JavaScript、WASM 和模型全部由本站提供，不依赖第三方 CDN。首次仍需联网下载本站资源。
 
 ## 发布成 HTTPS 链接（推荐）
 
@@ -41,6 +41,19 @@ python3 -m http.server 8080 --directory /Users/didi/word-dictation-tool
 
 ## 注意
 
-首次识别需要联网从 CDN 加载 PaddleOCR JS 运行时；PP-OCRv5 检测和识别模型包已放在本站 `paddle-model/`，手机不需要访问百度对象存储。若 PaddleOCR 加载失败，页面会明确提示错误并提供重试，不会切换其他 OCR。首次使用 Kokoro 自然音色还会从本站加载约 92MB 的量化模型，之后由浏览器缓存。网络不可用时仍可以手动输入单词并使用兼容模式。Kokoro 音频只在本机生成，不会上传图片或单词；历史记录保存的是可恢复的朗读会话和设置，不是 mp3 文件。
+识别运行库位于 `vendor/`，PP-OCRv5 模型位于 `paddle-model/`；自然语音运行库、发音组件及 WASM 也随站点发布。Kokoro 模型（约 92MB）和音色位于 `kokoro-model/`。页面限制网络请求到本站，不会调用 jsDelivr、百度对象存储或 Hugging Face。首次加载取决于本站网络速度和设备性能，并不等同于首次离线可用。若 PaddleOCR 加载失败，页面会明确提示错误并提供重试，不会切换其他 OCR。历史记录保存的是单词和设置，恢复后重新生成音频。
+
+## 更新本地运行库
+
+`vendor/` 是已提交的构建产物，Pages 不需要现场下载依赖。维护时运行：
+
+```bash
+npm ci --ignore-scripts
+npm run build:vendor
+```
+
+锁文件固定所有依赖版本；OCR 与 TTS 使用独立且版本匹配的 ONNX Runtime/WASM。构建脚本将 Kokoro 音色 URL 改成本地路径，并保留第三方许可证。页面的 CSP 禁止第三方资源，允许 OpenCV 编译所需的动态代码执行。
+
+在启动了 `--remote-debugging-port=9224` 的 Chrome 和本地静态服务器后，可运行 `node scripts/check-same-origin.mjs http://127.0.0.1:8765/`。测试创建隔离浏览器上下文，拦截第三方 HTTP 请求，用图片走完整 PaddleOCR 流程并播放 Kokoro 音频，验证第三方请求数为零；也可传入正式站点 URL。桌面手机视口测试不等于 iPhone/安卓真机验证。
 
 Kokoro 模型采用 Apache-2.0 许可，模型文件位于 `kokoro-model/`，来源为 [onnx-community/Kokoro-82M-v1.0-ONNX](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)。

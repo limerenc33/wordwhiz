@@ -1,0 +1,2 @@
+# Generated/vendor files retain upstream formatting and license notices.
+vendor/** -whitespace linguist-vendored

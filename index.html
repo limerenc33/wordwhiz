@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' data: blob:; object-src 'none'; base-uri 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#fffaf2">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -320,7 +321,7 @@
       const state = {
         imageUrl: '', words: [], sequence: [], currentIndex: 0, repeatIndex: 0, isPlaying: false, isPaused: false,
         utterance: null, speechToken: 0, gapTimer: null, gapStartedAt: 0, gapRemaining: 0, ocrBusy: false, ocrRunId: 0, queuedFile: null, lastOcrFile: null, answerVisible: false, voices: [],
-        paddlePromise: null, paddleEngine: null, activeHistoryId: null, audio: new Audio(), audioUrl: '', audioCache: new Map(), audioUnlocked: false, kokoroPromise: null, kokoroTts: null, kokoroFetchInstalled: false, kokoroFailed: false, playbackKind: ''
+        paddlePromise: null, paddleEngine: null, activeHistoryId: null, audio: new Audio(), audioUrl: '', audioCache: new Map(), audioUnlocked: false, kokoroPromise: null, kokoroTts: null, kokoroFailed: false, playbackKind: ''
       };
 
       const settingsKey = 'wordwhiz-settings-v1';
@@ -545,22 +546,39 @@
       }
       async function prepareOcrImages(file) {
         const enhanced = await preprocessImage(file, 'enhanced').catch(() => file);
-        const binary = await preprocessImage(file, 'bw').catch(() => enhanced);
-        return { original: file, enhanced, binary };
+        return { original: file, enhanced };
       }
       async function getPaddleEngine() {
         if (state.paddleEngine) return state.paddleEngine;
         if (!state.paddlePromise) {
           state.paddlePromise = (async () => {
-            setEngineStatus('正在加载 PaddleOCR 模型…', 'busy');
-            const module = await import('https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js@0.4.2/+esm');
+            setEngineStatus('正在加载 PaddleOCR 运行库…', 'busy');
+            setOcrProgress(true, '正在从本站加载识别组件…', 10);
+            const module = await import('./vendor/paddle.js');
             const base = document.baseURI;
+            setOcrProgress(true, '正在从本站加载识别模型…', 20);
+            let loadedModels = 0;
             const engine = await module.PaddleOCR.create({
               textDetectionModelName: 'PP-OCRv5_mobile_det',
               textDetectionModelAsset: { url: new URL('paddle-model/PP-OCRv5_mobile_det_onnx_infer.tar', base).href },
               textRecognitionModelName: 'PP-OCRv5_mobile_rec',
               textRecognitionModelAsset: { url: new URL('paddle-model/PP-OCRv5_mobile_rec_onnx_infer.tar', base).href },
-              ortOptions: { backend: 'wasm', wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/', numThreads: 1, proxy: false }
+              textDetectionBatchSize: 1,
+              textRecognitionBatchSize: 1,
+              fetch: async (url) => {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 110000);
+                try {
+                  const response = await fetch(url, { signal: controller.signal });
+                  if (!response.ok) throw new Error(`模型下载失败（HTTP ${response.status}）`);
+                  // Consume the body here so the timeout also covers slow transfers.
+                  const bytes = await response.arrayBuffer();
+                  loadedModels += 1;
+                  if (state.ocrBusy && state.lastOcrFile) setOcrProgress(true, loadedModels === 2 ? '模型下载完成，正在初始化…' : '识别模型已加载 1 / 2…', loadedModels === 2 ? 36 : 28);
+                  return new Response(bytes, { headers: response.headers });
+                } finally { clearTimeout(timer); }
+              },
+              ortOptions: { backend: 'wasm', wasmPaths: new URL('vendor/ocr-ort/', base).href, numThreads: 1, proxy: false }
             });
             state.paddleEngine = engine;
             return engine;
@@ -580,7 +598,7 @@
         const engine = await withTimeout(getPaddleEngine(), 120000, 'PaddleOCR 模型加载超时（请检查网络后重试）');
         if (runId !== state.ocrRunId) return [];
         setOcrProgress(true, 'PaddleOCR 正在检测文字区域…', 42); setEngineStatus('PaddleOCR PP-OCRv5 识别中…', 'busy');
-        const results = await engine.predict([images.enhanced, images.original], { textDetLimitSideLen: 2200, textRecScoreThresh: .3, textDetBoxThresh: .45 });
+        const results = await engine.predict(images.enhanced, { textDetLimitSideLen: 1536, textDetLimitType: 'max', textRecScoreThresh: .3, textDetBoxThresh: .45 });
         return wordsFromPaddleResults(results);
       }
       async function runOcr(file) {
@@ -632,29 +650,19 @@
         return state.voices.find((voice) => /^en(-|_)(US|GB|AU|CA)/i.test(voice.lang)) || state.voices.find((voice) => /^en/i.test(voice.lang)) || null;
       }
       function stopTimers() { if (state.gapTimer) { clearTimeout(state.gapTimer); state.gapTimer = null; } state.gapRemaining = 0; }
-      function installKokoroFetchRewrite() {
-        if (state.kokoroFetchInstalled) return;
-        const originalFetch = window.fetch.bind(window);
-        window.fetch = (input, init) => {
-          const rawUrl = typeof input === 'string' ? input : input?.url;
-          const match = rawUrl?.match(/^https:\/\/huggingface\.co\/onnx-community\/Kokoro-82M-v1\.0-ONNX\/resolve\/main\/voices\/([^?]+)/);
-          if (match) return originalFetch(new URL(`kokoro-model/voices/${match[1]}`, document.baseURI).href, init);
-          return originalFetch(input, init);
-        };
-        state.kokoroFetchInstalled = true;
-      }
       async function getKokoroTts() {
         if (state.kokoroTts) return state.kokoroTts;
         if (state.kokoroFailed) throw new Error('Kokoro 自然音色不可用');
         if (!state.kokoroPromise) {
           state.kokoroPromise = (async () => {
-            installKokoroFetchRewrite();
             setUploadStatus('正在加载自然音色，首次使用约需下载 92MB…');
-            const transformers = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1/+esm');
-            transformers.env.allowLocalModels = true;
-            transformers.env.allowRemoteModels = false;
-            transformers.env.localModelPath = './';
-            const module = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm');
+            const module = await import('./vendor/tts.js');
+            module.env.allowLocalModels = true;
+            module.env.allowRemoteModels = false;
+            module.env.localModelPath = './';
+            module.env.backends.onnx.wasm.wasmPaths = new URL('vendor/tts-ort/', document.baseURI).href;
+            module.env.backends.onnx.wasm.numThreads = 1;
+            module.env.backends.onnx.wasm.proxy = false;
             const tts = await withTimeout(module.KokoroTTS.from_pretrained('./kokoro-model', { dtype: 'q8', device: 'wasm' }), 120000, 'Kokoro 自然音色加载超时');
             state.kokoroTts = tts;
             setUploadStatus('自然音色已就绪，语音会在本机生成。', 'success');
