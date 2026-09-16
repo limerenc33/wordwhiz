@@ -217,8 +217,8 @@
         <div class="progress-row"><span id="ocrStatus">正在准备识别…</span><span id="ocrPercent">0%</span></div>
         <div class="progress-track"><div class="progress-bar" id="ocrBar"></div></div>
       </div>
-      <div class="ocr-engine-line"><span>识别策略</span><span id="ocrEngineStatus">PaddleOCR PP-OCRv5 优先 · 本地运行</span></div>
-      <p class="status" id="uploadStatus" aria-live="polite">图片会先做清晰化处理，再由 PaddleOCR 识别；不可用时自动回退到增强版 Tesseract。</p>
+      <div class="ocr-engine-line"><span>识别策略</span><span id="ocrEngineStatus">PaddleOCR PP-OCRv5 · 本地运行</span></div>
+      <p class="status" id="uploadStatus" aria-live="polite">图片会先做清晰化处理，再由 PaddleOCR 识别。模型首次加载可能需要几十秒。</p>
     </section>
 
     <section class="step-card" aria-labelledby="step-words-title">
@@ -300,7 +300,6 @@
     <p class="footer-note"><span aria-hidden="true">✿</span> 你的照片和单词只在这个浏览器里处理</p>
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
   <script>
     (() => {
       'use strict';
@@ -553,7 +552,14 @@
           state.paddlePromise = (async () => {
             setEngineStatus('正在加载 PaddleOCR 模型…', 'busy');
             const module = await import('https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js@0.4.2/+esm');
-            const engine = await module.PaddleOCR.create({ lang: 'en', ocrVersion: 'PP-OCRv5', ortOptions: { backend: 'wasm', wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/', numThreads: 1 } });
+            const base = document.baseURI;
+            const engine = await module.PaddleOCR.create({
+              textDetectionModelName: 'PP-OCRv5_mobile_det',
+              textDetectionModelAsset: { url: new URL('paddle-model/PP-OCRv5_mobile_det_onnx_infer.tar', base).href },
+              textRecognitionModelName: 'PP-OCRv5_mobile_rec',
+              textRecognitionModelAsset: { url: new URL('paddle-model/PP-OCRv5_mobile_rec_onnx_infer.tar', base).href },
+              ortOptions: { backend: 'wasm', wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/', numThreads: 1, proxy: false }
+            });
             state.paddleEngine = engine;
             return engine;
           })().catch((error) => { state.paddlePromise = null; throw error; });
@@ -569,38 +575,12 @@
         return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
       }
       async function recognizeWithPaddle(images, runId) {
-        const engine = await withTimeout(getPaddleEngine(), 45000, 'PaddleOCR 模型加载超时');
+        const engine = await withTimeout(getPaddleEngine(), 120000, 'PaddleOCR 模型加载超时（请检查网络后重试）');
         if (runId !== state.ocrRunId) return [];
         setOcrProgress(true, 'PaddleOCR 正在检测文字区域…', 42); setEngineStatus('PaddleOCR PP-OCRv5 识别中…', 'busy');
         const results = await engine.predict([images.enhanced, images.original], { textDetLimitSideLen: 2200, textRecScoreThresh: .3, textDetBoxThresh: .45 });
         return wordsFromPaddleResults(results);
       }
-      async function waitForTesseract() {
-        if (window.Tesseract) return window.Tesseract;
-        const deadline = Date.now() + 15000;
-        while (!window.Tesseract && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 250));
-        return window.Tesseract;
-      }
-      async function recognizeWithTesseract(images, runId) {
-        const tesseract = await waitForTesseract();
-        if (!tesseract) throw new Error('Tesseract.js 尚未加载');
-        setEngineStatus('增强版 Tesseract 回退识别中…', 'busy');
-        const worker = await tesseract.createWorker('eng', 1, { logger: (info) => {
-          const pct = typeof info.progress === 'number' ? 35 + info.progress * 55 : 38;
-          if (runId === state.ocrRunId) setOcrProgress(true, '回退识别正在读取英文…', pct);
-        }});
-        try {
-          if (worker.setParameters) await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-          const outputs = [];
-          for (const input of [images.enhanced, images.binary, images.original]) {
-            if (runId !== state.ocrRunId) return [];
-            const result = await worker.recognize(input);
-            outputs.push(result?.data?.text || '');
-          }
-          return normalizeWords(outputs.join('\n'));
-        } finally { await worker.terminate(); }
-      }
-
       async function runOcr(file) {
         const runId = ++state.ocrRunId;
         if (state.ocrBusy) {
@@ -613,18 +593,8 @@
           const images = await prepareOcrImages(file);
           if (runId !== state.ocrRunId) return;
           let words = [];
-          let engine = 'PaddleOCR PP-OCRv5';
-          try {
-            words = await recognizeWithPaddle(images, runId);
-          } catch (paddleError) {
-            console.warn('PaddleOCR unavailable, falling back to Tesseract.js', paddleError);
-            if (runId === state.ocrRunId) {
-              setEngineStatus('PaddleOCR 不可用 · 自动回退增强识别', 'busy');
-              setOcrProgress(true, 'PaddleOCR 未就绪，正在切换本地回退识别…', 28);
-            }
-            engine = '增强版 Tesseract.js';
-            words = await recognizeWithTesseract(images, runId);
-          }
+          const engine = 'PaddleOCR PP-OCRv5';
+          words = await recognizeWithPaddle(images, runId);
           if (runId !== state.ocrRunId) return;
           if (!words.length) {
             setUploadStatus('暂时没有读到清晰的英文单词，你可以在下方手动输入。', 'error');
@@ -640,8 +610,8 @@
           console.warn(error);
           if (runId === state.ocrRunId) {
             setOcrProgress(false);
-            setEngineStatus('识别失败 · 可手动输入单词', 'error');
-            setUploadStatus('自动识别暂时不可用，但不影响使用：请在下方手动输入单词，或稍后重试。', 'error');
+            setEngineStatus('PaddleOCR 识别失败 · 请重试', 'error');
+            setUploadStatus(`PaddleOCR 暂时无法完成识别：${error.message || '请检查网络后重试'}。不会切换其他 OCR。`, 'error');
           }
         } finally {
           state.ocrBusy = false;

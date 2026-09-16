@@ -4,13 +4,13 @@
 
 ## 运行
 
-桌面端可以直接双击 `index.html` 使用手动输入和听写功能。要在手机上拍照并稳定运行 PaddleOCR/Tesseract OCR，推荐把这个目录放到任意支持 HTTPS 的静态网站托管服务，或在电脑上运行：
+桌面端可以直接双击 `index.html` 使用手动输入和听写功能。要在手机上拍照并稳定运行 PaddleOCR，推荐把这个目录放到支持 HTTPS 的静态网站托管服务，或在电脑上运行：
 
 ```bash
 python3 -m http.server 8080 --directory /Users/didi/word-dictation-tool
 ```
 
-然后在手机浏览器打开同一局域网地址。首次 OCR 需要联网加载 PaddleOCR 模型、运行时和英文语言包。
+然后在手机浏览器打开同一局域网地址。首次 OCR 需要联网加载 PaddleOCR JS 运行时；PP-OCRv5 模型包已随网页自托管，避免手机访问第三方模型站点失败。
 
 ## 发布成 HTTPS 链接（推荐）
 
@@ -27,7 +27,7 @@ python3 -m http.server 8080 --directory /Users/didi/word-dictation-tool
 ## 已包含
 
 - 手机相机拍照与图片上传（`capture="environment"`）
-- 浏览器本地 OCR（PaddleOCR PP-OCRv5 优先，失败时回退增强版 Tesseract.js）
+- 浏览器本地 OCR（仅使用 PaddleOCR PP-OCRv5，不切换其他 OCR）
 - 图片清晰化预处理、英文候选词去重和可编辑确认
 - OCR 结果可编辑、去重、手动补充
 - 朗读速度 0.55×–1.25×、单词间隔 1–8 秒
@@ -41,6 +41,6 @@ python3 -m http.server 8080 --directory /Users/didi/word-dictation-tool
 
 ## 注意
 
-首次识别需要联网从 CDN 加载 PaddleOCR/Tesseract 资源；首次使用 Kokoro 自然音色还会从本站加载约 92MB 的量化模型，之后由浏览器缓存。网络不可用时仍可以手动输入单词并使用兼容模式。Kokoro 音频只在本机生成，不会上传图片或单词；历史记录保存的是可恢复的朗读会话和设置，不是 mp3 文件。
+首次识别需要联网从 CDN 加载 PaddleOCR JS 运行时；PP-OCRv5 检测和识别模型包已放在本站 `paddle-model/`，手机不需要访问百度对象存储。若 PaddleOCR 加载失败，页面会明确提示错误并提供重试，不会切换其他 OCR。首次使用 Kokoro 自然音色还会从本站加载约 92MB 的量化模型，之后由浏览器缓存。网络不可用时仍可以手动输入单词并使用兼容模式。Kokoro 音频只在本机生成，不会上传图片或单词；历史记录保存的是可恢复的朗读会话和设置，不是 mp3 文件。
 
 Kokoro 模型采用 Apache-2.0 许可，模型文件位于 `kokoro-model/`，来源为 [onnx-community/Kokoro-82M-v1.0-ONNX](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)。
