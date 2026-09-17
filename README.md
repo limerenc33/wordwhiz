@@ -26,7 +26,7 @@ python3 -m http.server 8080 --directory /Users/didi/word-dictation-tool
 
 ## 已包含
 
-- 手机相机拍照与图片上传（`capture="environment"`）
+- 独立的“拍照”和“从相册选择”入口；只有拍照入口使用 `capture="environment"`，相册入口保留系统图片选择器
 - 浏览器本地 OCR（仅使用 PaddleOCR PP-OCRv5，不切换其他 OCR）
 - 图片清晰化预处理、英文候选词去重和可编辑确认
 - OCR 结果可编辑、去重、手动补充

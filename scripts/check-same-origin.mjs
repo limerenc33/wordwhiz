@@ -45,6 +45,16 @@ try {
   await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await page.send('Page.navigate', { url: base });
   await waitFor(`document.querySelector('#imageInput') && document.readyState === 'complete'`);
+  const pickerRoutes = await evaluate(`(() => {
+    const inputs = [imageInput, cameraInput]; const clicked = [];
+    const original = inputs.map(input => input.click);
+    inputs.forEach(input => input.click = () => clicked.push(input.id));
+    choosePhotoButton.click(); takePhotoButton.click();
+    inputs.forEach((input, i) => input.click = original[i]);
+    return { clicked, albumCapture: imageInput.hasAttribute('capture'), cameraCapture: cameraInput.getAttribute('capture'), fits: document.documentElement.scrollWidth === innerWidth };
+  })()`);
+  assert.deepEqual(pickerRoutes, { clicked: ['imageInput', 'cameraInput'], albumCapture: false, cameraCapture: 'environment', fits: true });
+  console.log('Upload pickers', pickerRoutes);
   await evaluate(`(async () => {
     const c = document.createElement('canvas'); c.width = 900; c.height = 400;
     const ctx = c.getContext('2d'); ctx.fillStyle = 'white'; ctx.fillRect(0,0,900,400); ctx.fillStyle = 'black'; ctx.font = '48px Arial';

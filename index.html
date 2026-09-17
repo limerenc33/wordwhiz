@@ -83,6 +83,8 @@
     .upload-title { font-weight: 800; }
     .upload-subtitle { color: var(--muted); font-size: 12px; }
     .upload-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+    .upload-options { display: flex; gap: 10px; margin-top: 12px; }
+    .upload-options .control-btn { flex: 1; color: var(--ink); background: #fff; border-color: var(--line); }
     .preview-actions { position: absolute; z-index: 2; right: 11px; bottom: 11px; display: flex; gap: 8px; }
     .icon-btn { display: inline-grid; place-items: center; min-width: 39px; min-height: 39px; border: 1px solid rgba(255,255,255,.72); border-radius: 12px; color: var(--ink); background: rgba(255,255,255,.88); box-shadow: 0 4px 12px rgba(0,0,0,.08); }
 
@@ -199,7 +201,7 @@
     <section class="step-card" aria-labelledby="step-upload-title">
       <div class="step-header">
         <h2 class="step-title" id="step-upload-title"><span class="step-number">1</span>拍照或上传单词表</h2>
-        <div class="step-help">手机点一下就能打开相机</div>
+        <div class="step-help">可拍照，也可从相册选择</div>
       </div>
       <div class="dropzone" id="dropzone">
         <div class="dropzone-preview" aria-hidden="true"><img id="previewImage" alt="已选择的单词表预览"></div>
@@ -208,12 +210,17 @@
           <div class="upload-title">选择一张清晰的照片</div>
           <div class="upload-subtitle">支持 JPG / PNG · 也可以拖进来</div>
         </div>
-        <input class="upload-input" id="imageInput" type="file" accept="image/*" capture="environment" aria-label="拍照或上传单词表">
+        <input class="upload-input" id="imageInput" type="file" accept="image/*" aria-label="从相册或文件选择单词表">
         <div class="preview-actions" id="previewActions" hidden>
           <button class="icon-btn" id="replaceImage" type="button" aria-label="重新选择图片" data-tooltip="重新选择">↻</button>
           <button class="icon-btn" id="clearImage" type="button" aria-label="移除图片" data-tooltip="移除图片">×</button>
         </div>
       </div>
+      <div class="upload-options">
+        <button class="control-btn" id="takePhotoButton" type="button">拍照</button>
+        <button class="control-btn" id="choosePhotoButton" type="button">从相册选择</button>
+      </div>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
       <div class="ocr-progress" id="ocrProgress" aria-live="polite">
         <div class="progress-row"><span id="ocrStatus">正在准备识别…</span><span id="ocrPercent">0%</span></div>
         <div class="progress-track"><div class="progress-bar" id="ocrBar"></div></div>
@@ -805,7 +812,13 @@
       function nextWord() { if (!state.isPlaying) return; cancelSpeech(); if (state.currentIndex >= state.sequence.length - 1) { finishSession(); return; } state.currentIndex += 1; state.repeatIndex = 0; state.answerVisible = false; setSessionText(); speakCurrent(); }
       function toggleAnswer() { if (!state.isPlaying) return; state.answerVisible = !state.answerVisible; els.answerButton.textContent = state.answerVisible ? '隐藏答案' : '显示答案'; setSessionText(); }
 
-      els.imageInput.addEventListener('change', (event) => chooseImage(event.target.files?.[0]));
+      [els.imageInput, $('cameraInput')].forEach((input) => input.addEventListener('change', (event) => {
+        const file = event.target.files?.[0];
+        if (file) chooseImage(file);
+        input.value = '';
+      }));
+      $('takePhotoButton').addEventListener('click', () => $('cameraInput').click());
+      $('choosePhotoButton').addEventListener('click', () => els.imageInput.click());
       els.replaceImage.addEventListener('click', () => { els.imageInput.value = ''; els.imageInput.click(); });
       els.clearImage.addEventListener('click', () => { state.ocrRunId += 1; state.queuedFile = null; state.lastOcrFile = null; releaseImagePreview(); els.imageInput.value = ''; els.retryOcrButton.hidden = true; state.activeHistoryId = null; renderHistory(); setOcrProgress(false); setUploadStatus('图片已移除。你仍然可以在下方手动输入单词。'); });
       ['dragenter', 'dragover'].forEach((eventName) => els.dropzone.addEventListener(eventName, (event) => { event.preventDefault(); els.dropzone.classList.add('dragging'); }));
