@@ -507,7 +507,7 @@
       }
       function normalizeWords(raw) {
         const found = (raw.match(/[A-Za-z][A-Za-z'-]*/g) || []).map((word) => word.replace(/^[-']+|[-']+$/g, '').toLowerCase()).filter((word) => word.length >= 2 && word.length <= 32);
-        return [...new Set(found)].slice(0, 50);
+        return [...new Set(found)].slice(0, 200);
       }
       function wordsFromEditor() { return normalizeWords(els.wordEditor.value); }
       function updateWordMeta() { const count = wordsFromEditor().length; els.wordCount.textContent = `${count} 个单词`; }
@@ -594,7 +594,40 @@
         return state.paddlePromise;
       }
       function wordsFromPaddleResults(results) {
-        return normalizeWords(results.flatMap((result) => (result?.items || []).filter((item) => !Number.isFinite(item.score) || item.score >= .3).map((item) => item.text || '')).join('\n'));
+        const items = (results || []).flatMap((result) => result?.items || []).filter((item) => !Number.isFinite(item.score) || item.score >= .35);
+        const point = (item, index) => ({
+          x: Number(item.poly?.[0]?.[0] ?? item.box?.[0]?.[0] ?? 0),
+          y: Number(item.poly?.[0]?.[1] ?? item.box?.[0]?.[1] ?? index * 20)
+        });
+        // Vocabulary pages put the headword immediately before a slash. Taking that
+        // field avoids treating phonetics, parts of speech and translations as words.
+        const dictionary = items.map((item, index) => {
+          const match = String(item.text || '').match(/^\s*([A-Za-z][A-Za-z'-]{1,31})\s*\//);
+          return match ? { word: match[1].toLowerCase(), ...point(item, index) } : null;
+        }).filter(Boolean);
+        if (dictionary.length >= 3) return orderOcrColumns(dictionary).map((item) => item.word).filter((word, index, all) => all.indexOf(word) === index).slice(0, 200);
+
+        const ignored = new Set(['adj', 'adv', 'art', 'conj', 'det', 'interj', 'n', 'prep', 'pron', 'v', 'vi', 'vt', 'pl', 'sg', 'starter', 'unit']);
+        const candidates = [];
+        items.forEach((item, index) => {
+          if (Number.isFinite(item.score) && item.score < .35) return;
+          const text = String(item.text || '').replace(/[^A-Za-z' -]/g, ' ').trim();
+          const first = text.match(/[A-Za-z][A-Za-z'-]*/)?.[0]?.toLowerCase();
+          if (!first || first.length < 2 || first.length > 24 || ignored.has(first)) return;
+          candidates.push({ word: first, ...point(item, index) });
+        });
+        return orderOcrColumns(candidates).map((item) => item.word).filter((word, index, all) => all.indexOf(word) === index).slice(0, 200);
+      }
+      function orderOcrColumns(items) {
+        if (items.length < 2) return items;
+        const xs = [...new Set(items.map((item) => item.x).sort((a, b) => a - b))];
+        const gaps = xs.slice(1).map((x, index) => ({ gap: x - xs[index], index }));
+        const median = [...gaps].sort((a, b) => a.gap - b.gap)[Math.floor(gaps.length / 2)]?.gap || 0;
+        const split = gaps.filter((entry) => entry.gap > Math.max(80, median * 3)).sort((a, b) => b.gap - a.gap)[0];
+        if (!split) return [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+        const boundary = (xs[split.index] + xs[split.index + 1]) / 2;
+        const columns = [items.filter((item) => item.x <= boundary), items.filter((item) => item.x > boundary)];
+        return columns.flatMap((column) => column.sort((a, b) => a.y - b.y || a.x - b.x));
       }
       function withTimeout(promise, milliseconds, message) {
         let timer;
@@ -605,7 +638,7 @@
         const engine = await withTimeout(getPaddleEngine(), 120000, 'PaddleOCR 模型加载超时（请检查网络后重试）');
         if (runId !== state.ocrRunId) return [];
         setOcrProgress(true, 'PaddleOCR 正在检测文字区域…', 42); setEngineStatus('PaddleOCR PP-OCRv5 识别中…', 'busy');
-        const results = await engine.predict(images.enhanced, { textDetLimitSideLen: 1536, textDetLimitType: 'max', textRecScoreThresh: .3, textDetBoxThresh: .45 });
+        const results = await engine.predict(images.enhanced, { textDetLimitSideLen: 2200, textDetLimitType: 'max', textRecScoreThresh: .35, textDetBoxThresh: .45 });
         return wordsFromPaddleResults(results);
       }
       async function runOcr(file) {
